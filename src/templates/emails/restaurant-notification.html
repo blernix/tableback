@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+
+  <div style="background-color: {{actionColor}}; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="margin: 0;">{{actionTitle}}</h1>
+  </div>
+
+  <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e5e7eb;">
+    <h2 style="margin-top: 0;">Notification de réservation</h2>
+
+    <p>Une réservation a été {{actionVerb}}.</p>
+
+    <div style="background-color: #f3f4f6; padding: 20px; margin: 20px 0; border-radius: 4px;">
+      <h3 style="margin-top: 0; color: #374151;">Détails de la réservation</h3>
+      <p style="margin: 8px 0;"><strong style="color: #4b5563;">Client :</strong> <span style="color: #1f2937;">{{customerName}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #4b5563;">Email :</strong> <span style="color: #1f2937;">{{customerEmail}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #4b5563;">Téléphone :</strong> <span style="color: #1f2937;">{{customerPhone}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #4b5563;">Date :</strong> <span style="color: #1f2937;">{{reservationDate}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #4b5563;">Heure :</strong> <span style="color: #1f2937;">{{reservationTime}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #4b5563;">Personnes :</strong> <span style="color: #1f2937;">{{partySize}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #4b5563;">Statut :</strong> <span style="color: #1f2937;">{{status}}</span></p>
+      {{notesSection}}
+    </div>
+
+    <p style="color: #6b7280; font-size: 14px;">
+      Vous pouvez gérer cette réservation depuis votre espace TableMaster.
+    </p>
+  </div>
+
+  <div style="background-color: #f9fafb; padding: 20px; text-align: center; color: #9ca3af; font-size: 14px; border-radius: 0 0 8px 8px;">
+    © 2026 TableMaster - Gestion de réservations
+  </div>
+
+</body>
+</html>

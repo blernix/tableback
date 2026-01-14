@@ -1,0 +1,88 @@
+import logger from '../utils/logger';
+
+interface EnvValidation {
+  required: Record<string, string>;
+  optional: Record<string, string>;
+}
+
+// Define required and optional environment variables
+const envConfig: EnvValidation = {
+  required: {
+    MONGODB_URI: 'MongoDB connection string',
+    JWT_SECRET: 'JWT secret for token generation',
+  },
+  optional: {
+    NODE_ENV: 'development, production, test (default: development)',
+    PORT: 'Port for the server (default: 4000)',
+    CORS_ORIGINS: 'Comma-separated list of CORS origins (default: http://localhost:3000)',
+    BREVO_API_KEY: 'Brevo API key for email service',
+    EMAIL_ENABLED: 'Enable email sending (true/false, default: true)',
+    EMAIL_SENDER: 'Sender email address for emails',
+    GCS_PROJECT_ID: 'Google Cloud Storage project ID',
+    GCS_BUCKET_NAME: 'Google Cloud Storage bucket name',
+    SMTP_HOST: 'SMTP host for nodemailer (optional)',
+    SMTP_PORT: 'SMTP port (default: 587)',
+    SMTP_USER: 'SMTP username',
+    SMTP_PASS: 'SMTP password',
+    SMTP_SECURE: 'Use secure connection (true/false)',
+  },
+};
+
+/**
+ * Validate environment variables at startup
+ * @throws Error if required environment variables are missing
+ */
+export function validateEnv(): void {
+  const missing: string[] = [];
+  
+  // Check required variables
+  for (const [key, description] of Object.entries(envConfig.required)) {
+    if (!process.env[key]) {
+      missing.push(`${key} (${description})`);
+    }
+  }
+  
+  if (missing.length > 0) {
+    const errorMessage = `Missing required environment variables:\n${missing.map(m => `  - ${m}`).join('\n')}`;
+    logger.error(errorMessage);
+    throw new Error(errorMessage);
+  }
+  
+  // Log optional variables that are set
+  const setOptional: string[] = [];
+  for (const [key] of Object.entries(envConfig.optional)) {
+    if (process.env[key]) {
+      setOptional.push(`${key}: ${process.env[key]?.substring(0, 20)}${process.env[key] && process.env[key]!.length > 20 ? '...' : ''}`);
+    }
+  }
+  
+  logger.info('Environment validation passed', {
+    required: Object.keys(envConfig.required).length,
+    optionalSet: setOptional.length,
+    nodeEnv: process.env.NODE_ENV || 'development',
+  });
+  
+  // Additional validation based on conditions
+  if (process.env.EMAIL_ENABLED !== 'false' && !process.env.BREVO_API_KEY) {
+    logger.warn('EMAIL_ENABLED is true but BREVO_API_KEY is not set. Email functionality may be limited.');
+  }
+  
+  if (process.env.GCS_PROJECT_ID && !process.env.GCS_BUCKET_NAME) {
+    logger.warn('GCS_PROJECT_ID is set but GCS_BUCKET_NAME is not. File uploads may not work.');
+  }
+  
+  if (process.env.GCS_BUCKET_NAME && !process.env.GCS_PROJECT_ID) {
+    logger.warn('GCS_BUCKET_NAME is set but GCS_PROJECT_ID is not. File uploads may not work.');
+  }
+
+  // CORS configuration check for production
+  if (process.env.NODE_ENV === 'production') {
+    const corsOrigins = process.env.CORS_ORIGINS || 'http://localhost:3000';
+    if (corsOrigins.includes('localhost') || corsOrigins.includes('127.0.0.1')) {
+      logger.warn('CORS_ORIGINS contains localhost addresses in production. This may be a security risk.');
+    }
+    if (corsOrigins === '*' || corsOrigins.includes('*')) {
+      logger.warn('CORS_ORIGINS contains wildcard (*) in production. Consider restricting to specific domains.');
+    }
+  }
+}

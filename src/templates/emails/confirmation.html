@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+
+  <div style="background-color: #10b981; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="margin: 0;">✅ Réservation confirmée !</h1>
+  </div>
+
+  <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e5e7eb;">
+    <h2 style="margin-top: 0;">Bonjour {{customerName}},</h2>
+
+    <p>Bonne nouvelle ! Votre réservation a été confirmée par le restaurant. Nous vous attendons avec plaisir ! 🎉</p>
+
+    <div style="background-color: #d1fae5; padding: 20px; border-left: 4px solid #10b981; margin: 20px 0; border-radius: 4px;">
+      <h3 style="margin-top: 0; color: #065f46;">Détails de votre réservation</h3>
+      <p style="margin: 8px 0;"><strong style="color: #047857;">Restaurant :</strong> <span style="color: #065f46;">{{restaurantName}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #047857;">Date :</strong> <span style="color: #065f46;">{{reservationDate}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #047857;">Heure :</strong> <span style="color: #065f46;">{{reservationTime}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #047857;">Personnes :</strong> <span style="color: #065f46;">{{partySize}}</span></p>
+    </div>
+
+    <div style="background-color: #f3f4f6; padding: 20px; margin: 20px 0; border-radius: 4px;">
+      <h3 style="margin-top: 0; color: #1f2937;">📞 Contact du restaurant</h3>
+      <p style="margin: 8px 0; color: #4b5563;"><strong>Téléphone :</strong> {{restaurantPhone}}</p>
+      <p style="margin: 8px 0; color: #4b5563;"><strong>Email :</strong> {{restaurantEmail}}</p>
+    </div>
+
+    <p style="color: #6b7280; font-size: 14px;">
+      Pour toute question, vous pouvez répondre directement à cet email ou contacter le restaurant aux coordonnées ci-dessus.
+    </p>
+
+    <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+
+    <p style="color: #6b7280; font-size: 14px;">
+      <strong>Besoin d'annuler ?</strong><br>
+      Si vous devez annuler votre réservation, cliquez sur le bouton ci-dessous :
+    </p>
+
+    <p style="text-align: center; margin: 20px 0;">
+      <a href="{{cancellationLink}}" style="background-color: #ef4444; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; display: inline-block;">
+        Annuler ma réservation
+      </a>
+    </p>
+
+    <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
+      Ce lien expire dans 24 heures avant votre réservation
+    </p>
+  </div>
+
+  <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 8px 8px;">
+    <p style="margin: 0 0 10px; color: #4b5563; font-size: 14px;">
+      À bientôt au restaurant ! 🍽️
+    </p>
+    <p style="margin: 0; color: #9ca3af; font-size: 14px;">
+      © 2026 TableMaster - Gestion de réservations
+    </p>
+  </div>
+
+</body>
+</html>

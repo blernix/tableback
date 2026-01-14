@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+
+  <div style="background-color: #f59e0b; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
+    <h1 style="margin: 0;">⏳ Demande reçue</h1>
+  </div>
+
+  <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e5e7eb;">
+    <h2 style="margin-top: 0;">Bonjour {{customerName}},</h2>
+
+    <p>Nous avons bien reçu votre demande de réservation. Le restaurant va l'examiner et vous enverra une confirmation sous peu.</p>
+
+    <div style="background-color: #fef3c7; padding: 20px; border-left: 4px solid #f59e0b; margin: 20px 0; border-radius: 4px;">
+      <h3 style="margin-top: 0; color: #92400e;">Détails de votre réservation</h3>
+      <p style="margin: 8px 0;"><strong style="color: #78350f;">Restaurant :</strong> <span style="color: #92400e;">{{restaurantName}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #78350f;">Date :</strong> <span style="color: #92400e;">{{reservationDate}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #78350f;">Heure :</strong> <span style="color: #92400e;">{{reservationTime}}</span></p>
+      <p style="margin: 8px 0;"><strong style="color: #78350f;">Personnes :</strong> <span style="color: #92400e;">{{partySize}}</span></p>
+    </div>
+
+    <p style="color: #6b7280; font-size: 14px;">
+      Vous recevrez un email de confirmation dès que le restaurant aura validé votre réservation.
+    </p>
+
+    <p style="color: #6b7280; font-size: 14px;">
+      Merci de votre patience ! ⏰
+    </p>
+  </div>
+
+  <div style="background-color: #f9fafb; padding: 20px; text-align: center; color: #9ca3af; font-size: 14px; border-radius: 0 0 8px 8px;">
+    © 2026 TableMaster - Gestion de réservations
+  </div>
+
+</body>
+</html>

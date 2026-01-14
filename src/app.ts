@@ -1,0 +1,105 @@
+import express, { Application, Request, Response, NextFunction } from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import logger from './utils/logger';
+import healthRoutes from './routes/health.routes';
+import authRoutes from './routes/auth.routes';
+import adminRoutes from './routes/admin.routes';
+import restaurantRoutes from './routes/restaurant.routes';
+import menuRoutes from './routes/menu.routes';
+import publicRoutes from './routes/public.routes';
+import reservationRoutes from './routes/reservation.routes';
+import dayBlockRoutes from './routes/dayblock.routes';
+import userRoutes from './routes/user.routes';
+import { sanitizeRequest } from './middleware/sanitize.middleware';
+
+// Load environment variables
+dotenv.config();
+
+const app: Application = express();
+
+// Security middleware
+app.use(helmet());
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: {
+    error: {
+      message: 'Too many requests from this IP, please try again after 15 minutes'
+    }
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply rate limiting to all API routes
+app.use('/api/', limiter);
+
+// Request size limits to prevent DoS attacks
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// CORS configuration
+const corsOrigins = process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'];
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+app.use(
+  cors({
+    origin: isDevelopment ? (_origin, callback) => {
+      // Allow all origins in development for easier testing
+      callback(null, true);
+    } : corsOrigins,
+    credentials: true,
+  })
+);
+
+// Request logging middleware
+app.use((req: Request, _res: Response, next: NextFunction) => {
+  logger.info(`${req.method} ${req.path}`);
+  next();
+});
+
+// Input sanitization middleware
+app.use(sanitizeRequest);
+
+// Routes
+app.use('/', healthRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/restaurant', restaurantRoutes);
+app.use('/api/menu', menuRoutes);
+app.use('/api/reservations', reservationRoutes);
+app.use('/api/day-blocks', dayBlockRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/public', publicRoutes);
+
+// 404 handler
+app.use((_req: Request, res: Response) => {
+  res.status(404).json({
+    error: {
+      message: 'Route not found',
+    },
+  });
+});
+
+// Error handling middleware
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  logger.error('Error:', err);
+
+  const statusCode = err.statusCode || 500;
+  const message =
+    process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message;
+
+  res.status(statusCode).json({
+    error: {
+      message,
+      ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
+    },
+  });
+});
+
+export default app;

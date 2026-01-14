@@ -1,0 +1,612 @@
+import { Request, Response } from 'express';
+import Reservation from '../models/Reservation.model';
+import Restaurant from '../models/Restaurant.model';
+import DayBlock from '../models/DayBlock.model';
+import Closure from '../models/Closure.model';
+import logger from '../utils/logger';
+import { z } from 'zod';
+import { validateReservationCancelToken } from '../services/tokenService';
+import {
+  sendCancellationConfirmationEmail,
+  sendPendingReservationEmail,
+  sendRestaurantNotificationEmail,
+} from '../services/emailService';
+
+// Validation schema for public reservation creation
+const createPublicReservationSchema = z.object({
+  customerName: z.string().min(1, 'Customer name is required').trim(),
+  customerEmail: z.string().email('Invalid email').trim(),
+  customerPhone: z.string().min(1, 'Phone is required').trim(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
+  time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)'),
+  numberOfGuests: z.number().int().min(1, 'At least 1 guest is required'),
+  notes: z.string().trim().optional(),
+});
+
+// Create a reservation (public endpoint)
+export const createPublicReservation = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const restaurant = req.restaurant!;
+    const validatedData = createPublicReservationSchema.parse(req.body);
+
+    // Check if the date is blocked
+    const isBlocked = await DayBlock.findOne({
+      restaurantId: restaurant._id,
+      date: new Date(validatedData.date),
+    });
+
+    if (isBlocked) {
+      res.status(400).json({
+        error: {
+          message: 'This date is not available for reservations',
+          reason: isBlocked.reason,
+        },
+      });
+      return;
+    }
+
+    // Check if the date is in a closure period
+    const requestedDate = new Date(validatedData.date);
+    const closure = await Closure.findOne({
+      restaurantId: restaurant._id,
+      startDate: { $lte: requestedDate },
+      endDate: { $gte: requestedDate },
+    });
+
+    if (closure) {
+      res.status(400).json({
+        error: {
+          message: 'The restaurant is closed on this date',
+          reason: closure.reason,
+        },
+      });
+      return;
+    }
+
+    // Check opening hours for the requested day
+    const dayOfWeek = requestedDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as
+      | 'monday'
+      | 'tuesday'
+      | 'wednesday'
+      | 'thursday'
+      | 'friday'
+      | 'saturday'
+      | 'sunday';
+
+    const daySchedule = restaurant.openingHours[dayOfWeek];
+
+    if (daySchedule.closed) {
+      res.status(400).json({
+        error: {
+          message: `The restaurant is closed on ${dayOfWeek}s`,
+        },
+      });
+      return;
+    }
+
+    // Check if the requested time is within opening hours
+    if (restaurant.reservationConfig.useOpeningHours && daySchedule.slots.length > 0) {
+      const requestedTime = validatedData.time;
+      let isWithinOpeningHours = false;
+
+      for (const slot of daySchedule.slots) {
+        if (requestedTime >= slot.start && requestedTime <= slot.end) {
+          isWithinOpeningHours = true;
+          break;
+        }
+      }
+
+      if (!isWithinOpeningHours) {
+        res.status(400).json({
+          error: {
+            message: 'The requested time is outside of opening hours',
+            openingHours: daySchedule.slots,
+          },
+        });
+        return;
+      }
+    }
+
+    // Create the reservation with pending status
+    const reservation = new Reservation({
+      restaurantId: restaurant._id,
+      customerName: validatedData.customerName,
+      customerEmail: validatedData.customerEmail,
+      customerPhone: validatedData.customerPhone,
+      date: new Date(validatedData.date),
+      time: validatedData.time,
+      numberOfGuests: validatedData.numberOfGuests,
+      status: 'pending',
+      notes: validatedData.notes || '',
+    });
+
+    await reservation.save();
+
+    logger.info(`Public reservation created for restaurant: ${restaurant.name}, Customer: ${reservation.customerName}`);
+
+    // Send email notifications
+    try {
+      // Send confirmation to customer
+      const reservationData = {
+        _id: reservation._id.toString(),
+        customerName: reservation.customerName,
+        customerEmail: reservation.customerEmail,
+        customerPhone: reservation.customerPhone || '',
+        date: reservation.date,
+        time: reservation.time,
+        partySize: reservation.numberOfGuests,
+        restaurantId: restaurant._id.toString(),
+        status: reservation.status,
+        notes: reservation.notes || '',
+      };
+
+      const restaurantData = {
+        _id: restaurant._id.toString(),
+        name: restaurant.name,
+        email: restaurant.email,
+        phone: restaurant.phone,
+      };
+
+      await sendPendingReservationEmail(reservationData, restaurantData);
+
+      // Send notification to restaurant
+      await sendRestaurantNotificationEmail(reservationData, restaurantData, 'created');
+    } catch (emailError) {
+      logger.error('Error sending reservation emails:', emailError);
+    }
+
+    res.status(201).json({
+      reservation: {
+        _id: reservation._id,
+        customerName: reservation.customerName,
+        customerEmail: reservation.customerEmail,
+        customerPhone: reservation.customerPhone,
+        date: reservation.date,
+        time: reservation.time,
+        numberOfGuests: reservation.numberOfGuests,
+        status: reservation.status,
+        notes: reservation.notes,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        error: {
+          message: 'Validation error',
+          details: error.errors,
+        },
+      });
+      return;
+    }
+
+    logger.error('Error creating public reservation:', error);
+    res.status(500).json({ error: { message: 'Failed to create reservation' } });
+  }
+};
+
+// Check availability for a specific date
+export const checkAvailability = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const restaurant = req.restaurant!;
+    const { date } = req.params;
+
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      res.status(400).json({
+        error: {
+          message: 'Invalid date format. Use YYYY-MM-DD',
+        },
+      });
+      return;
+    }
+
+    const requestedDate = new Date(date);
+
+    // Check if the date is blocked
+    const dayBlock = await DayBlock.findOne({
+      restaurantId: restaurant._id,
+      date: requestedDate,
+    });
+
+    if (dayBlock) {
+      res.json({
+        available: false,
+        reason: 'blocked',
+        message: dayBlock.reason || 'This date is blocked',
+      });
+      return;
+    }
+
+    // Check if the date is in a closure period
+    const closure = await Closure.findOne({
+      restaurantId: restaurant._id,
+      startDate: { $lte: requestedDate },
+      endDate: { $gte: requestedDate },
+    });
+
+    if (closure) {
+      res.json({
+        available: false,
+        reason: 'closed',
+        message: closure.reason || 'Restaurant is closed',
+      });
+      return;
+    }
+
+    // Check opening hours
+    const dayOfWeek = requestedDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as
+      | 'monday'
+      | 'tuesday'
+      | 'wednesday'
+      | 'thursday'
+      | 'friday'
+      | 'saturday'
+      | 'sunday';
+
+    const daySchedule = restaurant.openingHours[dayOfWeek];
+
+    if (daySchedule.closed) {
+      res.json({
+        available: false,
+        reason: 'closed',
+        message: `Restaurant is closed on ${dayOfWeek}s`,
+      });
+      return;
+    }
+
+    // Get existing reservations for the date
+    const existingReservations = await Reservation.countDocuments({
+      restaurantId: restaurant._id,
+      date: requestedDate,
+      status: { $nin: ['cancelled'] },
+    });
+
+    res.json({
+      available: true,
+      openingHours: daySchedule.slots,
+      existingReservations,
+      defaultDuration: restaurant.reservationConfig.defaultDuration,
+    });
+  } catch (error) {
+    logger.error('Error checking availability:', error);
+    res.status(500).json({ error: { message: 'Failed to check availability' } });
+  }
+};
+
+// Get available time slots for a date
+export const getAvailableTimeSlots = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const restaurant = req.restaurant!;
+    const { date } = req.params;
+
+
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      res.status(400).json({
+        error: {
+          message: 'Invalid date format. Use YYYY-MM-DD',
+        },
+      });
+      return;
+    }
+
+    const requestedDate = new Date(date);
+
+    // Check if date is available using checkAvailability logic
+    const dayBlock = await DayBlock.findOne({
+      restaurantId: restaurant._id,
+      date: requestedDate,
+    });
+
+    if (dayBlock) {
+      res.json({
+        available: false,
+        slots: [],
+        reason: 'Date is blocked',
+      });
+      return;
+    }
+
+    const closure = await Closure.findOne({
+      restaurantId: restaurant._id,
+      startDate: { $lte: requestedDate },
+      endDate: { $gte: requestedDate },
+    });
+
+    if (closure) {
+      res.json({
+        available: false,
+        slots: [],
+        reason: 'Restaurant is closed',
+      });
+      return;
+    }
+
+    const dayOfWeek = requestedDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() as
+      | 'monday'
+      | 'tuesday'
+      | 'wednesday'
+      | 'thursday'
+      | 'friday'
+      | 'saturday'
+      | 'sunday';
+
+    const daySchedule = restaurant.openingHours[dayOfWeek];
+
+    if (daySchedule.closed) {
+      res.json({
+        available: false,
+        slots: [],
+        reason: 'Restaurant is closed on this day',
+      });
+      return;
+    }
+
+    // Generate time slots based on opening hours
+    const slots: string[] = [];
+
+    for (const period of daySchedule.slots) {
+      const [startHour, startMinute] = period.start.split(':').map(Number);
+      const [endHour, endMinute] = period.end.split(':').map(Number);
+
+      let currentHour = startHour;
+      let currentMinute = startMinute;
+
+      while (
+        currentHour < endHour ||
+        (currentHour === endHour && currentMinute <= endMinute - restaurant.reservationConfig.defaultDuration)
+      ) {
+        const timeSlot = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+        slots.push(timeSlot);
+
+        // Increment by 30 minutes
+        currentMinute += 30;
+        if (currentMinute >= 60) {
+          currentHour += 1;
+          currentMinute -= 60;
+        }
+      }
+    }
+
+    // Get existing reservations for the date
+    const existingReservations = await Reservation.find({
+      restaurantId: restaurant._id,
+      date: requestedDate,
+      status: { $nin: ['cancelled'] },
+    }).select('time numberOfGuests');
+
+    res.json({
+      available: true,
+      slots,
+      existingReservations: existingReservations.map(r => ({
+        time: r.time,
+        numberOfGuests: r.numberOfGuests,
+      })),
+      config: {
+        defaultDuration: restaurant.reservationConfig.defaultDuration,
+        totalTables: restaurant.tablesConfig.totalTables,
+        averageCapacity: restaurant.tablesConfig.averageCapacity,
+      },
+    });
+  } catch (error) {
+    logger.error('Error getting available time slots:', error);
+    res.status(500).json({ error: { message: 'Failed to get available time slots' } });
+  }
+};
+
+// Get restaurant information (public)
+export const getRestaurantInfo = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const restaurant = req.restaurant!;
+
+    res.json({
+      restaurant: {
+        name: restaurant.name,
+        address: restaurant.address,
+        phone: restaurant.phone,
+        email: restaurant.email,
+        openingHours: restaurant.openingHours,
+        reservationConfig: restaurant.reservationConfig,
+        tablesConfig: {
+          totalTables: restaurant.tablesConfig.totalTables,
+          averageCapacity: restaurant.tablesConfig.averageCapacity,
+        },
+      },
+    });
+  } catch (error) {
+    logger.error('Error getting restaurant info:', error);
+    res.status(500).json({ error: { message: 'Failed to get restaurant information' } });
+  }
+};
+
+// Cancel reservation via email link (public endpoint with token)
+export const cancelReservation = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token } = req.query;
+
+    if (!token || typeof token !== 'string') {
+      res.status(400).json({
+        error: { message: 'Cancellation token is required' },
+      });
+      return;
+    }
+
+    // Validate the cancellation token
+    const tokenValidation = validateReservationCancelToken(token);
+
+    if (!tokenValidation.valid) {
+      res.status(400).json({
+        error: {
+          message: tokenValidation.error || 'Invalid or expired cancellation token',
+        },
+      });
+      return;
+    }
+
+    // Find reservation by ID from token
+    const reservation = await Reservation.findById(tokenValidation.data!.reservationId);
+
+    if (!reservation) {
+      res.status(404).json({ error: { message: 'Reservation not found' } });
+      return;
+    }
+
+    // Verify restaurantId matches token
+    if (reservation.restaurantId.toString() !== tokenValidation.data!.restaurantId) {
+      res.status(400).json({ error: { message: 'Invalid cancellation token for this restaurant' } });
+      return;
+    }
+
+    // Check if reservation is already cancelled
+    if (reservation.status === 'cancelled') {
+      res.status(400).json({
+        error: { message: 'This reservation has already been cancelled' },
+      });
+      return;
+    }
+
+    // Check if reservation can be cancelled (not in the past)
+    const now = new Date();
+    const reservationDateTime = new Date(reservation.date);
+    const [hours, minutes] = reservation.time.split(':').map(Number);
+    reservationDateTime.setHours(hours, minutes, 0, 0);
+
+    if (reservationDateTime < now) {
+      res.status(400).json({
+        error: { message: 'Cannot cancel a reservation that has already passed' },
+      });
+      return;
+    }
+
+    // Get restaurant information for the email
+    const restaurant = await Restaurant.findById(reservation.restaurantId);
+
+    if (!restaurant) {
+      logger.error(`Restaurant not found for reservation ${reservation._id}`);
+      res.status(500).json({ error: { message: 'Failed to process cancellation' } });
+      return;
+    }
+
+    // Update reservation status to cancelled
+    reservation.status = 'cancelled';
+    await reservation.save();
+
+    logger.info(`Reservation cancelled: ${reservation._id} for customer ${reservation.customerName}`);
+
+    // Send cancellation confirmation email to customer
+    try {
+      const reservationData = {
+        _id: reservation._id.toString(),
+        customerName: reservation.customerName,
+        customerEmail: reservation.customerEmail,
+        customerPhone: reservation.customerPhone || '',
+        date: reservation.date,
+        time: reservation.time,
+        partySize: reservation.numberOfGuests,
+        restaurantId: reservation.restaurantId.toString(),
+        status: 'cancelled' as const,
+        notes: reservation.notes || '',
+      };
+
+      const restaurantData = {
+        _id: restaurant._id.toString(),
+        name: restaurant.name,
+        email: restaurant.email,
+        phone: restaurant.phone,
+      };
+
+      await sendCancellationConfirmationEmail(reservationData, restaurantData);
+      
+      // Send notification to restaurant (added per user request)
+      await sendRestaurantNotificationEmail(reservationData, restaurantData, 'cancelled');
+    } catch (emailError) {
+      logger.error('Error sending cancellation confirmation email:', emailError);
+      // Don't fail the cancellation if email fails
+    }
+
+    // Return HTML response for better UX
+    const htmlResponse = `
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Réservation annulée - TableMaster</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background-color: #f3f4f6;
+    }
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      max-width: 500px;
+      text-align: center;
+    }
+    .success-icon {
+      font-size: 64px;
+      color: #10b981;
+      margin-bottom: 20px;
+    }
+    h1 {
+      color: #1f2937;
+      margin-bottom: 16px;
+    }
+    p {
+      color: #6b7280;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+    .reservation-details {
+      background-color: #f9fafb;
+      padding: 20px;
+      border-radius: 6px;
+      margin: 24px 0;
+      text-align: left;
+    }
+    .reservation-details p {
+      margin: 8px 0;
+      color: #374151;
+    }
+    .reservation-details strong {
+      color: #1f2937;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="success-icon">✓</div>
+    <h1>Réservation annulée</h1>
+    <p>Votre réservation a été annulée avec succès.</p>
+
+    <div class="reservation-details">
+      <p><strong>Restaurant:</strong> ${restaurant.name}</p>
+      <p><strong>Date:</strong> ${new Date(reservation.date).toLocaleDateString('fr-FR', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      })}</p>
+      <p><strong>Heure:</strong> ${reservation.time}</p>
+      <p><strong>Nombre de personnes:</strong> ${reservation.numberOfGuests}</p>
+    </p>
+
+    <p>Un email de confirmation vous a été envoyé.</p>
+    <p>Nous espérons vous revoir bientôt !</p>
+  </div>
+</body>
+</html>
+    `;
+
+    res.status(200).send(htmlResponse);
+  } catch (error) {
+    logger.error('Error cancelling reservation:', error);
+    res.status(500).json({ error: { message: 'Failed to cancel reservation' } });
+  }
+};
