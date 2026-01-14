@@ -24,17 +24,39 @@ const seedAdmin = async () => {
       process.exit(0);
     }
 
+    // Get admin credentials from environment variables with development defaults
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@tablemaster.com';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+
+    // Validate admin credentials in production
+    if (process.env.NODE_ENV === 'production') {
+      if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
+        throw new Error(
+          'ADMIN_EMAIL and ADMIN_PASSWORD environment variables are required in production. ' +
+          'Please set them in your .env.production file.'
+        );
+      }
+      
+      if (adminPassword === 'admin123') {
+        logger.warn('⚠️  Using default password in production is highly insecure!');
+      }
+    } else {
+      logger.warn('⚠️  Using development default credentials. Change these in production!');
+    }
+
     // Create admin user
     const adminUser = new User({
-      email: 'admin@tablemaster.com',
-      password: 'admin123', // Change this in production!
+      email: adminEmail,
+      password: adminPassword,
       role: 'admin',
     });
 
     await adminUser.save();
     logger.info('Admin user created successfully!');
-    logger.info('Email: admin@tablemaster.com');
-    logger.info('Password: admin123');
+    logger.info(`Email: ${adminEmail}`);
+    if (process.env.NODE_ENV !== 'production') {
+      logger.info(`Password: ${adminPassword}`);
+    }
     logger.info('⚠️  Please change this password in production!');
 
     process.exit(0);

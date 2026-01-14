@@ -25,6 +25,8 @@ const envConfig: EnvValidation = {
     SMTP_USER: 'SMTP username',
     SMTP_PASS: 'SMTP password',
     SMTP_SECURE: 'Use secure connection (true/false)',
+    ADMIN_EMAIL: 'Email for initial admin user (default: admin@tablemaster.com)',
+    ADMIN_PASSWORD: 'Password for initial admin user (default: admin123)',
   },
 };
 
@@ -83,6 +85,18 @@ export function validateEnv(): void {
     }
     if (corsOrigins === '*' || corsOrigins.includes('*')) {
       logger.warn('CORS_ORIGINS contains wildcard (*) in production. Consider restricting to specific domains.');
+    }
+
+    // Admin credentials check for production
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@tablemaster.com';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    
+    if (adminEmail === 'admin@tablemaster.com') {
+      logger.warn('ADMIN_EMAIL is using default value in production. Consider changing to a custom email.');
+    }
+    
+    if (adminPassword === 'admin123') {
+      logger.warn('ADMIN_PASSWORD is using default value in production. This is a serious security risk!');
     }
   }
 }
