@@ -35,10 +35,12 @@ export interface IRestaurant extends Document {
   email: string;
   apiKey: string;
   status: 'active' | 'inactive';
+  timezone: string;
   logoUrl?: string;
   menu: {
     displayMode: 'pdf' | 'detailed' | 'both';
     pdfUrl?: string;
+    qrCodeGenerated: boolean;
   };
   openingHours: OpeningHours;
   tablesConfig: {
@@ -105,6 +107,10 @@ const restaurantSchema = new Schema<IRestaurant>(
       enum: ['active', 'inactive'],
       default: 'active',
     },
+    timezone: {
+      type: String,
+      default: 'Europe/Paris',
+    },
     logoUrl: {
       type: String,
       default: null,
@@ -118,6 +124,10 @@ const restaurantSchema = new Schema<IRestaurant>(
       pdfUrl: {
         type: String,
         default: null,
+      },
+      qrCodeGenerated: {
+        type: Boolean,
+        default: false,
       },
     },
     openingHours: {

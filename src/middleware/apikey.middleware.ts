@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import Restaurant from '../models/Restaurant.model';
+import Restaurant, { IRestaurant } from '../models/Restaurant.model';
 import logger from '../utils/logger';
 
 // Extend Express Request type to include restaurant
@@ -7,7 +7,7 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      restaurant?: any;
+      restaurant?: IRestaurant;
     }
   }
 }

@@ -258,9 +258,14 @@ export const getDishes = async (req: Request, res: Response): Promise<void> => {
 
     const { categoryId } = req.query;
 
-    const filter: any = { restaurantId: req.user.restaurantId };
+    interface DishFilter {
+      restaurantId: string;
+      categoryId?: string;
+    }
+
+    const filter: DishFilter = { restaurantId: req.user.restaurantId };
     if (categoryId) {
-      filter.categoryId = categoryId;
+      filter.categoryId = categoryId as string;
     }
 
     const dishes = await Dish.find(filter)

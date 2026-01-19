@@ -40,7 +40,18 @@ const createClosureSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)').optional(),
   reason: z.string().optional(),
-});
+}).refine(
+  (data) => {
+    if (!data.endDate) return true;
+    const start = new Date(data.startDate);
+    const end = new Date(data.endDate);
+    return end >= start;
+  },
+  {
+    message: 'End date must be greater than or equal to start date',
+    path: ['endDate'],
+  }
+);
 
 const switchMenuModeSchema = z.object({
   displayMode: z.enum(['pdf', 'detailed', 'both'], { errorMap: () => ({ message: 'Display mode must be pdf, detailed, or both' }) }),
@@ -203,7 +214,7 @@ export const uploadMenuPdf = async (req: Request, res: Response): Promise<void> 
 
     // Update restaurant with new PDF URL
     // Only switch to 'pdf' mode if currently in 'detailed' mode
-    const updateData: any = {
+    const updateData: Record<string, string> = {
       'menu.pdfUrl': pdfUrl,
     };
 
@@ -289,7 +300,7 @@ export const updateTablesConfig = async (req: Request, res: Response): Promise<v
 
     const validatedData = updateTablesConfigSchema.parse(req.body);
 
-    const updateData: any = {};
+    const updateData: Record<string, string | number | unknown[]> = {};
 
     if (validatedData.mode !== undefined) {
       updateData['tablesConfig.mode'] = validatedData.mode;
@@ -350,7 +361,7 @@ export const updateReservationConfig = async (req: Request, res: Response): Prom
 
     const validatedData = updateReservationConfigSchema.parse(req.body);
 
-    const updateData: any = {};
+    const updateData: Record<string, number | boolean> = {};
     if (validatedData.defaultDuration !== undefined) {
       updateData['reservationConfig.defaultDuration'] = validatedData.defaultDuration;
     }
@@ -665,5 +676,49 @@ export const deleteLogo = async (req: Request, res: Response): Promise<void> => 
   } catch (error) {
     logger.error('Error deleting restaurant logo:', error);
     res.status(500).json({ error: { message: 'Failed to delete restaurant logo' } });
+  }
+};
+
+// Generate QR code for menu (mark as generated)
+export const generateMenuQrCode = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user?.restaurantId) {
+      res.status(400).json({ error: { message: 'User not associated with a restaurant' } });
+      return;
+    }
+
+    const restaurant = await Restaurant.findById(req.user.restaurantId);
+
+    if (!restaurant) {
+      res.status(404).json({ error: { message: 'Restaurant not found' } });
+      return;
+    }
+
+    // Check if restaurant has a PDF menu
+    if (!restaurant.menu.pdfUrl) {
+      res.status(400).json({
+        error: { message: 'Restaurant must have a PDF menu to generate QR code' }
+      });
+      return;
+    }
+
+    // Mark QR code as generated
+    restaurant.menu.qrCodeGenerated = true;
+    await restaurant.save();
+
+    // Generate the stable QR code URL
+    const backendUrl = process.env.BACKEND_URL || 'http://localhost:4000';
+    const qrCodeUrl = `${backendUrl}/api/public/menu/pdf/${restaurant._id}`;
+
+    logger.info(`QR code generated for restaurant: ${restaurant.name} (ID: ${restaurant._id})`);
+
+    res.status(200).json({
+      message: 'QR code generated successfully',
+      qrCodeUrl,
+      restaurant
+    });
+  } catch (error) {
+    logger.error('Error generating menu QR code:', error);
+    res.status(500).json({ error: { message: 'Failed to generate QR code' } });
   }
 };

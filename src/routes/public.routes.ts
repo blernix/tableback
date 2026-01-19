@@ -10,6 +10,9 @@ const router = Router();
 // Get menu by API key (legacy - no middleware)
 router.get('/menu/:apiKey', publicController.getMenuByApiKey);
 
+// Get menu PDF by restaurant ID (stable URL for QR codes)
+router.get('/menu/pdf/:restaurantId', publicController.getMenuPdfById);
+
 // Reservation endpoints (require API key in header)
 router.post('/reservations', verifyApiKey, publicReservationController.createPublicReservation);
 router.get('/availability/:date', verifyApiKey, publicReservationController.checkAvailability);

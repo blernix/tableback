@@ -7,6 +7,7 @@ export interface IUser extends Document {
   role: 'admin' | 'restaurant' | 'server';
   restaurantId?: mongoose.Types.ObjectId;
   status: 'active' | 'inactive';
+  mustChangePassword: boolean;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -41,6 +42,10 @@ const userSchema = new Schema<IUser>(
       type: String,
       enum: ['active', 'inactive'],
       default: 'active',
+    },
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
     },
   },
   {

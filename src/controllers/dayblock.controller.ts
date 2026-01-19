@@ -88,29 +88,38 @@ export const bulkCreateDayBlocks = async (req: Request, res: Response): Promise<
     const restaurantId = req.user!.restaurantId;
     const validated = bulkCreateDayBlocksSchema.parse(req.body);
 
-    const dayBlocks = [];
-    const errors = [];
+    // Convert all date strings to Date objects
+    const dates = validated.dates.map(dateStr => new Date(dateStr));
 
-    for (const dateStr of validated.dates) {
-      try {
-        const existing = await DayBlock.findOne({
-          restaurantId,
-          date: new Date(dateStr),
-        });
+    // Find existing blocked days in a single query
+    const existingBlocks = await DayBlock.find({
+      restaurantId,
+      date: { $in: dates },
+    }).lean();
 
-        if (!existing) {
-          const dayBlock = await DayBlock.create({
-            restaurantId,
-            date: new Date(dateStr),
-            reason: validated.reason,
-          });
-          dayBlocks.push(dayBlock);
-        } else {
-          errors.push({ date: dateStr, reason: 'Already blocked' });
-        }
-      } catch (error) {
-        errors.push({ date: dateStr, reason: 'Failed to create' });
-      }
+    // Create a Set of existing dates for fast lookup
+    const existingDatesSet = new Set(
+      existingBlocks.map(block => block.date.toISOString().split('T')[0])
+    );
+
+    // Filter out dates that already exist
+    const newDayBlocksData = validated.dates
+      .filter(dateStr => !existingDatesSet.has(dateStr))
+      .map(dateStr => ({
+        restaurantId,
+        date: new Date(dateStr),
+        reason: validated.reason,
+      }));
+
+    // Track errors for already blocked dates
+    const errors = validated.dates
+      .filter(dateStr => existingDatesSet.has(dateStr))
+      .map(dateStr => ({ date: dateStr, reason: 'Already blocked' }));
+
+    // Bulk insert all new day blocks in a single operation
+    let dayBlocks = [];
+    if (newDayBlocksData.length > 0) {
+      dayBlocks = await DayBlock.insertMany(newDayBlocksData);
     }
 
     res.status(201).json({

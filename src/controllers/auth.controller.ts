@@ -30,6 +30,11 @@ const resetPasswordSchema = z.object({
   newPassword: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+});
+
 // Register new user (admin only operation via admin routes)
 export const register = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -136,6 +141,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
         email: user.email,
         role: user.role,
         restaurantId: user.restaurantId,
+        mustChangePassword: user.mustChangePassword,
       },
       token,
     });
@@ -252,10 +258,28 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
         email: string;
         role: 'admin' | 'restaurant' | 'server';
         restaurantId?: string;
+        exp?: number;
       };
     } catch (error) {
       res.status(401).json({ error: { message: 'Invalid token' } });
       return;
+    }
+
+    // Check if token is within grace period (7 days after expiration)
+    const GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+    if (decoded.exp) {
+      const expirationDate = decoded.exp * 1000; // Convert to milliseconds
+      const now = Date.now();
+      const timeSinceExpiration = now - expirationDate;
+
+      if (timeSinceExpiration > GRACE_PERIOD_MS) {
+        res.status(401).json({
+          error: {
+            message: 'Token has expired beyond the refresh grace period. Please login again.'
+          }
+        });
+        return;
+      }
     }
 
     // Generate new token with same payload
@@ -330,5 +354,56 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
     logger.error('Reset password error:', error);
     res.status(500).json({ error: { message: 'Failed to reset password' } });
+  }
+};
+
+// Change password (authenticated users)
+export const changePassword = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const validatedData = changePasswordSchema.parse(req.body);
+
+    // Get authenticated user from request
+    if (!req.user?.userId) {
+      res.status(401).json({ error: { message: 'Unauthorized' } });
+      return;
+    }
+
+    // Find user
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      res.status(404).json({ error: { message: 'User not found' } });
+      return;
+    }
+
+    // Verify current password
+    const isPasswordValid = await user.comparePassword(validatedData.currentPassword);
+    if (!isPasswordValid) {
+      res.status(401).json({ error: { message: 'Current password is incorrect' } });
+      return;
+    }
+
+    // Update password
+    user.password = validatedData.newPassword;
+    user.mustChangePassword = false; // Reset the flag
+    await user.save();
+
+    logger.info(`Password changed successfully for user: ${user.email}`);
+
+    res.status(200).json({
+      message: 'Password changed successfully',
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        error: {
+          message: 'Validation error',
+          details: error.errors,
+        },
+      });
+      return;
+    }
+
+    logger.error('Change password error:', error);
+    res.status(500).json({ error: { message: 'Failed to change password' } });
   }
 };

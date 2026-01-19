@@ -32,11 +32,24 @@ const registerLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Rate limiter for login (10 attempts per 15 minutes per IP)
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 requests per 15 minutes
+  message: {
+    error: {
+      message: 'Too many login attempts. Please try again later.'
+    }
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // POST /api/auth/register - Register new user (admin only, rate limited)
 router.post('/register', registerLimiter, authenticateToken, authorizeRole(['admin']), authController.register);
 
-// POST /api/auth/login - Login user
-router.post('/login', authController.login);
+// POST /api/auth/login - Login user (rate limited)
+router.post('/login', loginLimiter, authController.login);
 
 // POST /api/auth/refresh - Refresh JWT token
 router.post('/refresh', authController.refreshToken);
@@ -49,5 +62,8 @@ router.post('/forgot-password', forgotPasswordLimiter, forgotPasswordEmailRateLi
 
 // POST /api/auth/reset-password - Reset password with token
 router.post('/reset-password', authController.resetPassword);
+
+// POST /api/auth/change-password - Change password (requires authentication)
+router.post('/change-password', authenticateToken, authController.changePassword);
 
 export default router;

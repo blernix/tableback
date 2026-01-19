@@ -3,15 +3,37 @@ import multer from 'multer';
 import path from 'path';
 import crypto from 'crypto';
 
-// Initialize Google Cloud Storage with absolute path
-const keyFilename = path.join(process.cwd(), 'gcs-service-account.json');
+// Initialize Google Cloud Storage with credentials from environment variable
+let storage: Storage;
 
-const storage = new Storage({
-  projectId: process.env.GCS_PROJECT_ID || 'generique-450417',
-  keyFilename: keyFilename,
-});
+if (process.env.GCS_CREDENTIALS) {
+  // Use credentials from environment variable (recommended for production)
+  try {
+    const credentials = JSON.parse(process.env.GCS_CREDENTIALS);
+    storage = new Storage({
+      projectId: process.env.GCS_PROJECT_ID,
+      credentials: credentials,
+    });
+  } catch (error) {
+    console.error('Failed to parse GCS_CREDENTIALS:', error);
+    throw new Error('Invalid GCS_CREDENTIALS format. Must be valid JSON.');
+  }
+} else if (process.env.GCS_KEY_FILENAME) {
+  // Fallback: Use keyFilename if specified (for local development)
+  const keyFilename = path.join(process.cwd(), process.env.GCS_KEY_FILENAME);
+  storage = new Storage({
+    projectId: process.env.GCS_PROJECT_ID,
+    keyFilename: keyFilename,
+  });
+} else {
+  throw new Error('GCS_CREDENTIALS or GCS_KEY_FILENAME environment variable is required');
+}
 
-const bucketName = process.env.GCS_BUCKET_NAME || 'stock_clients';
+if (!process.env.GCS_BUCKET_NAME) {
+  throw new Error('GCS_BUCKET_NAME environment variable is required');
+}
+
+const bucketName = process.env.GCS_BUCKET_NAME;
 const bucket = storage.bucket(bucketName);
 
 // Multer configuration for memory storage

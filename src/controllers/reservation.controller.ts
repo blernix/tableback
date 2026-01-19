@@ -46,7 +46,13 @@ export const getReservations = async (req: Request, res: Response): Promise<void
 
     const { startDate, endDate, status } = req.query;
 
-    const filter: any = { restaurantId: req.user.restaurantId };
+    interface ReservationFilter {
+      restaurantId: string;
+      date?: { $gte: Date; $lte: Date };
+      status?: string;
+    }
+
+    const filter: ReservationFilter = { restaurantId: req.user.restaurantId };
 
     // Filter by date range
     if (startDate && endDate) {

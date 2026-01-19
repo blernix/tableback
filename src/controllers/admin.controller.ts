@@ -38,8 +38,11 @@ const createUserSchema = z.object({
 // Get all restaurants with pagination
 export const getRestaurants = async (req: Request, res: Response): Promise<void> => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const requestedLimit = parseInt(req.query.limit as string) || 20;
+    // Enforce maximum limit to prevent DoS attacks
+    const MAX_LIMIT = 100;
+    const limit = Math.min(requestedLimit, MAX_LIMIT);
     const skip = (page - 1) * limit;
 
     const restaurants = await Restaurant.find()
@@ -374,14 +377,32 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 // Get admin dashboard statistics
 export const getAdminDashboard = async (_req: Request, res: Response): Promise<void> => {
   try {
-    // Count restaurants by status
-    const activeRestaurants = await Restaurant.countDocuments({ status: 'active' });
-    const inactiveRestaurants = await Restaurant.countDocuments({ status: 'inactive' });
-    
-    // Count users by role
-    const adminUsers = await User.countDocuments({ role: 'admin' });
-    const restaurantUsers = await User.countDocuments({ role: 'restaurant' });
-    const serverUsers = await User.countDocuments({ role: 'server' });
+    // Optimize: Count restaurants by status in a single aggregation
+    const restaurantStats = await Restaurant.aggregate([
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const activeRestaurants = restaurantStats.find(s => s._id === 'active')?.count || 0;
+    const inactiveRestaurants = restaurantStats.find(s => s._id === 'inactive')?.count || 0;
+
+    // Optimize: Count users by role in a single aggregation
+    const userStats = await User.aggregate([
+      {
+        $group: {
+          _id: '$role',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const adminUsers = userStats.find(s => s._id === 'admin')?.count || 0;
+    const restaurantUsers = userStats.find(s => s._id === 'restaurant')?.count || 0;
+    const serverUsers = userStats.find(s => s._id === 'server')?.count || 0;
     
     // Recent reservations (last 7 days)
     const oneWeekAgo = new Date();
@@ -520,12 +541,14 @@ export const getRestaurantAnalytics = async (req: Request, res: Response): Promi
       }
     }
 
-    // Get reservations for the period
-    const reservations = await Reservation.find({
+    // Get all reservations for the period (including cancelled for status distribution)
+    const allReservations = await Reservation.find({
       restaurantId: id,
-      date: { $gte: startDate, $lte: endDate },
-      status: { $nin: ['cancelled'] }
+      date: { $gte: startDate, $lte: endDate }
     }).sort({ date: 1 });
+
+    // Filter non-cancelled reservations for main stats
+    const reservations = allReservations.filter(r => r.status !== 'cancelled');
 
     // Calculate daily stats
     const dailyStatsMap = new Map<string, { date: string; reservations: number; guests: number; revenue: number }>();
@@ -562,24 +585,9 @@ export const getRestaurantAnalytics = async (req: Request, res: Response): Promi
     const averagePrice = restaurant.reservationConfig.averagePrice || 0;
     const estimatedRevenue = averagePrice * totalGuests;
 
-    // Get reservation status distribution
-    const statusCounts = await Reservation.aggregate([
-      {
-        $match: {
-          restaurantId: new mongoose.Types.ObjectId(id),
-          date: { $gte: startDate, $lte: endDate }
-        }
-      },
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    const statusDistribution = statusCounts.reduce((acc, curr) => {
-      acc[curr._id] = curr.count;
+    // Calculate status distribution from already fetched reservations (no additional query)
+    const statusDistribution = allReservations.reduce((acc, reservation) => {
+      acc[reservation.status] = (acc[reservation.status] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 

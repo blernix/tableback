@@ -11,6 +11,7 @@ import {
   sendPendingReservationEmail,
   sendRestaurantNotificationEmail,
 } from '../services/emailService';
+import { zonedTimeToUtc, utcToZonedTime, format } from 'date-fns-tz';
 
 // Validation schema for public reservation creation
 const createPublicReservationSchema = z.object({
@@ -465,25 +466,30 @@ export const cancelReservation = async (req: Request, res: Response): Promise<vo
       return;
     }
 
-    // Check if reservation can be cancelled (not in the past)
-    const now = new Date();
-    const reservationDateTime = new Date(reservation.date);
-    const [hours, minutes] = reservation.time.split(':').map(Number);
-    reservationDateTime.setHours(hours, minutes, 0, 0);
-
-    if (reservationDateTime < now) {
-      res.status(400).json({
-        error: { message: 'Cannot cancel a reservation that has already passed' },
-      });
-      return;
-    }
-
     // Get restaurant information for the email
     const restaurant = await Restaurant.findById(reservation.restaurantId);
 
     if (!restaurant) {
       logger.error(`Restaurant not found for reservation ${reservation._id}`);
       res.status(500).json({ error: { message: 'Failed to process cancellation' } });
+      return;
+    }
+
+    // Check if reservation can be cancelled (not in the past)
+    // Use restaurant's timezone for accurate comparison
+    const restaurantTimezone = restaurant.timezone || 'Europe/Paris';
+    const now = utcToZonedTime(new Date(), restaurantTimezone);
+
+    // Combine date and time in the restaurant's timezone
+    const reservationDateStr = format(reservation.date, 'yyyy-MM-dd', { timeZone: 'UTC' });
+    const reservationDateTimeStr = `${reservationDateStr}T${reservation.time}:00`;
+    const reservationDateTime = zonedTimeToUtc(reservationDateTimeStr, restaurantTimezone);
+    const reservationDateTimeInTz = utcToZonedTime(reservationDateTime, restaurantTimezone);
+
+    if (reservationDateTimeInTz < now) {
+      res.status(400).json({
+        error: { message: 'Cannot cancel a reservation that has already passed' },
+      });
       return;
     }
 

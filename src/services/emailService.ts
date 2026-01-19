@@ -211,6 +211,22 @@ function formatDate(dateInput: Date | string): string {
 }
 
 /**
+ * ESCAPE HTML HELPER
+ * Escape HTML special characters to prevent XSS attacks in emails
+ */
+function escapeHtml(text: string): string {
+  const htmlEscapeMap: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#x27;',
+    '/': '&#x2F;',
+  };
+  return text.replace(/[&<>"'/]/g, (char) => htmlEscapeMap[char] || char);
+}
+
+/**
  * 1. SEND PASSWORD RESET EMAIL
  *
  * Template: password-reset.html
@@ -418,10 +434,11 @@ export async function sendRestaurantNotificationEmail(
 
   const config = actionConfig[action];
 
-  // Format notes section if notes exist
+  // Format notes section if notes exist (escape HTML to prevent XSS)
   let notesSection = '';
   if (reservation.notes && reservation.notes.trim() !== '') {
-    notesSection = `<p style="margin: 8px 0;"><strong style="color: #4b5563;">Notes :</strong> <span style="color: #1f2937;">${reservation.notes}</span></p>`;
+    const escapedNotes = escapeHtml(reservation.notes);
+    notesSection = `<p style="margin: 8px 0;"><strong style="color: #4b5563;">Notes :</strong> <span style="color: #1f2937;">${escapedNotes}</span></p>`;
   }
 
   return sendEmail({

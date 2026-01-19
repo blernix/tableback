@@ -20,6 +20,8 @@ const envConfig: EnvValidation = {
     EMAIL_SENDER: 'Sender email address for emails',
     GCS_PROJECT_ID: 'Google Cloud Storage project ID',
     GCS_BUCKET_NAME: 'Google Cloud Storage bucket name',
+    GCS_CREDENTIALS: 'Google Cloud Storage credentials as JSON string (recommended for production)',
+    GCS_KEY_FILENAME: 'Path to GCS service account key file (for local development)',
     SMTP_HOST: 'SMTP host for nodemailer (optional)',
     SMTP_PORT: 'SMTP port (default: 587)',
     SMTP_USER: 'SMTP username',
@@ -69,12 +71,36 @@ export function validateEnv(): void {
     logger.warn('EMAIL_ENABLED is true but BREVO_API_KEY is not set. Email functionality may be limited.');
   }
   
-  if (process.env.GCS_PROJECT_ID && !process.env.GCS_BUCKET_NAME) {
-    logger.warn('GCS_PROJECT_ID is set but GCS_BUCKET_NAME is not. File uploads may not work.');
-  }
-  
-  if (process.env.GCS_BUCKET_NAME && !process.env.GCS_PROJECT_ID) {
-    logger.warn('GCS_BUCKET_NAME is set but GCS_PROJECT_ID is not. File uploads may not work.');
+  // GCS configuration validation
+  const hasGcsConfig = process.env.GCS_PROJECT_ID || process.env.GCS_BUCKET_NAME;
+
+  if (hasGcsConfig) {
+    if (!process.env.GCS_PROJECT_ID) {
+      logger.warn('GCS_BUCKET_NAME is set but GCS_PROJECT_ID is not. File uploads may not work.');
+    }
+    if (!process.env.GCS_BUCKET_NAME) {
+      logger.warn('GCS_PROJECT_ID is set but GCS_BUCKET_NAME is not. File uploads may not work.');
+    }
+
+    // Check credentials are provided
+    const hasCredentials = process.env.GCS_CREDENTIALS || process.env.GCS_KEY_FILENAME;
+    if (!hasCredentials) {
+      logger.warn('GCS configuration detected but neither GCS_CREDENTIALS nor GCS_KEY_FILENAME is set. File uploads will fail.');
+    }
+
+    // Validate GCS_CREDENTIALS format if provided
+    if (process.env.GCS_CREDENTIALS) {
+      try {
+        const credentials = JSON.parse(process.env.GCS_CREDENTIALS);
+        if (!credentials.type || !credentials.project_id || !credentials.private_key) {
+          logger.warn('GCS_CREDENTIALS is missing required fields (type, project_id, private_key)');
+        } else {
+          logger.info('GCS_CREDENTIALS validated successfully');
+        }
+      } catch (error) {
+        logger.error('GCS_CREDENTIALS is not valid JSON. File uploads will fail.');
+      }
+    }
   }
 
   // CORS configuration check for production

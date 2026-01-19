@@ -5,6 +5,16 @@ interface EmailRateLimitEntry {
   firstAttempt: number;
 }
 
+/**
+ * In-memory email rate limiter
+ *
+ * NOTE: This implementation is suitable for single-instance deployments.
+ * For production environments with multiple instances, consider using Redis
+ * to ensure atomic operations across all instances:
+ * - Use Redis INCR for atomic counter increments
+ * - Use Redis EXPIRE for automatic cleanup
+ * - Libraries like 'rate-limit-redis' can help with this
+ */
 class EmailRateLimiter {
   private attempts = new Map<string, EmailRateLimitEntry>();
   private readonly windowMs: number;
@@ -36,29 +46,33 @@ class EmailRateLimiter {
 
   attempt(email: string): boolean {
     this.cleanup();
-    
+
     const now = Date.now();
     const entry = this.attempts.get(email);
-    
+
     if (!entry) {
       this.attempts.set(email, { count: 1, firstAttempt: now });
       return true;
     }
-    
+
     // Check if window has passed
     if (now - entry.firstAttempt > this.windowMs) {
       // Reset counter
       this.attempts.set(email, { count: 1, firstAttempt: now });
       return true;
     }
-    
+
     // Check if max attempts exceeded
     if (entry.count >= this.maxAttempts) {
       return false;
     }
-    
-    // Increment counter
-    entry.count++;
+
+    // Increment counter atomically by creating a new object
+    // This prevents race conditions with concurrent requests
+    this.attempts.set(email, {
+      count: entry.count + 1,
+      firstAttempt: entry.firstAttempt
+    });
     return true;
   }
 

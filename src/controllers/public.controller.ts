@@ -38,31 +38,38 @@ export const getMenuByApiKey = async (req: Request, res: Response): Promise<void
         .sort({ displayOrder: 1 })
         .select('name displayOrder');
 
-      const categoriesWithDishes = await Promise.all(
-        categories.map(async (category) => {
-          const dishes = await Dish.find({
-            restaurantId: restaurant._id,
-            categoryId: category._id,
-            available: true, // Only return available dishes
-          })
-            .select('name description price allergens photoUrl')
-            .lean();
+      // Fetch all dishes in a single query to avoid N+1 problem
+      const allDishes = await Dish.find({
+        restaurantId: restaurant._id,
+        available: true,
+      })
+        .select('name description price allergens photoUrl categoryId')
+        .lean();
 
-          return {
-            id: category._id,
-            name: category.name,
-            displayOrder: category.displayOrder,
-            dishes: dishes.map(dish => ({
-              id: dish._id,
-              name: dish.name,
-              description: dish.description,
-              price: dish.price,
-              allergens: dish.allergens,
-              photoUrl: dish.photoUrl,
-            })),
-          };
-        })
-      );
+      // Group dishes by category
+      const dishesByCategory = allDishes.reduce((acc, dish) => {
+        const categoryId = dish.categoryId.toString();
+        if (!acc[categoryId]) {
+          acc[categoryId] = [];
+        }
+        acc[categoryId].push({
+          id: dish._id,
+          name: dish.name,
+          description: dish.description,
+          price: dish.price,
+          allergens: dish.allergens,
+          photoUrl: dish.photoUrl,
+        });
+        return acc;
+      }, {} as Record<string, typeof allDishes>);
+
+      // Map categories with their dishes
+      const categoriesWithDishes = categories.map(category => ({
+        id: category._id,
+        name: category.name,
+        displayOrder: category.displayOrder,
+        dishes: dishesByCategory[category._id.toString()] || [],
+      }));
 
       // Filter out empty categories
       const filteredCategories = categoriesWithDishes.filter(cat => cat.dishes.length > 0);
@@ -79,31 +86,38 @@ export const getMenuByApiKey = async (req: Request, res: Response): Promise<void
         .sort({ displayOrder: 1 })
         .select('name displayOrder');
 
-      const categoriesWithDishes = await Promise.all(
-        categories.map(async (category) => {
-          const dishes = await Dish.find({
-            restaurantId: restaurant._id,
-            categoryId: category._id,
-            available: true, // Only return available dishes
-          })
-            .select('name description price allergens photoUrl')
-            .lean();
+      // Fetch all dishes in a single query to avoid N+1 problem
+      const allDishes = await Dish.find({
+        restaurantId: restaurant._id,
+        available: true,
+      })
+        .select('name description price allergens photoUrl categoryId')
+        .lean();
 
-          return {
-            id: category._id,
-            name: category.name,
-            displayOrder: category.displayOrder,
-            dishes: dishes.map(dish => ({
-              id: dish._id,
-              name: dish.name,
-              description: dish.description,
-              price: dish.price,
-              allergens: dish.allergens,
-              photoUrl: dish.photoUrl,
-            })),
-          };
-        })
-      );
+      // Group dishes by category
+      const dishesByCategory = allDishes.reduce((acc, dish) => {
+        const categoryId = dish.categoryId.toString();
+        if (!acc[categoryId]) {
+          acc[categoryId] = [];
+        }
+        acc[categoryId].push({
+          id: dish._id,
+          name: dish.name,
+          description: dish.description,
+          price: dish.price,
+          allergens: dish.allergens,
+          photoUrl: dish.photoUrl,
+        });
+        return acc;
+      }, {} as Record<string, typeof allDishes>);
+
+      // Map categories with their dishes
+      const categoriesWithDishes = categories.map(category => ({
+        id: category._id,
+        name: category.name,
+        displayOrder: category.displayOrder,
+        dishes: dishesByCategory[category._id.toString()] || [],
+      }));
 
       // Filter out empty categories
       const filteredCategories = categoriesWithDishes.filter(cat => cat.dishes.length > 0);
@@ -119,5 +133,38 @@ export const getMenuByApiKey = async (req: Request, res: Response): Promise<void
   } catch (error) {
     logger.error('Error fetching menu by API key:', error);
     res.status(500).json({ error: { message: 'Failed to fetch menu' } });
+  }
+};
+
+// Get menu PDF by restaurant ID (stable URL for QR codes)
+export const getMenuPdfById = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { restaurantId } = req.params;
+
+    if (!restaurantId) {
+      res.status(400).json({ error: { message: 'Restaurant ID is required' } });
+      return;
+    }
+
+    // Find restaurant by ID
+    const restaurant = await Restaurant.findById(restaurantId).select('name menu status');
+
+    if (!restaurant || restaurant.status !== 'active') {
+      res.status(404).json({ error: { message: 'Restaurant not found or inactive' } });
+      return;
+    }
+
+    // Check if restaurant has a PDF menu
+    if (!restaurant.menu.pdfUrl) {
+      res.status(404).json({ error: { message: 'This restaurant does not have a PDF menu' } });
+      return;
+    }
+
+    // Redirect to the current PDF URL
+    logger.info(`Menu PDF accessed for restaurant: ${restaurant.name} (ID: ${restaurantId})`);
+    res.redirect(restaurant.menu.pdfUrl);
+  } catch (error) {
+    logger.error('Error fetching menu PDF by restaurant ID:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch menu PDF' } });
   }
 };

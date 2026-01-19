@@ -49,6 +49,7 @@ const seedAdmin = async () => {
       email: adminEmail,
       password: adminPassword,
       role: 'admin',
+      mustChangePassword: adminPassword === 'admin123', // Force password change if using default
     });
 
     await adminUser.save();
@@ -57,7 +58,11 @@ const seedAdmin = async () => {
     if (process.env.NODE_ENV !== 'production') {
       logger.info(`Password: ${adminPassword}`);
     }
-    logger.info('⚠️  Please change this password in production!');
+    if (adminPassword === 'admin123') {
+      logger.warn('⚠️  Default password detected - you will be required to change it on first login!');
+    } else {
+      logger.info('⚠️  Please change this password in production!');
+    }
 
     process.exit(0);
   } catch (error) {
