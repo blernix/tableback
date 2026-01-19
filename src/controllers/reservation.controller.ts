@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import Reservation from '../models/Reservation.model';
 import DayBlock from '../models/DayBlock.model';
 import Restaurant from '../models/Restaurant.model';
@@ -47,7 +48,7 @@ export const getReservations = async (req: Request, res: Response): Promise<void
     const { startDate, endDate, status } = req.query;
 
     interface ReservationFilter {
-      restaurantId: string;
+      restaurantId: Types.ObjectId;
       date?: { $gte: Date; $lte: Date };
       status?: string;
     }

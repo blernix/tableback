@@ -11,7 +11,7 @@ import {
   sendPendingReservationEmail,
   sendRestaurantNotificationEmail,
 } from '../services/emailService';
-import { zonedTimeToUtc, utcToZonedTime, format } from 'date-fns-tz';
+import { fromZonedTime, toZonedTime, format } from 'date-fns-tz';
 
 // Validation schema for public reservation creation
 const createPublicReservationSchema = z.object({
@@ -478,13 +478,13 @@ export const cancelReservation = async (req: Request, res: Response): Promise<vo
     // Check if reservation can be cancelled (not in the past)
     // Use restaurant's timezone for accurate comparison
     const restaurantTimezone = restaurant.timezone || 'Europe/Paris';
-    const now = utcToZonedTime(new Date(), restaurantTimezone);
+    const now = toZonedTime(new Date(), restaurantTimezone);
 
     // Combine date and time in the restaurant's timezone
     const reservationDateStr = format(reservation.date, 'yyyy-MM-dd', { timeZone: 'UTC' });
     const reservationDateTimeStr = `${reservationDateStr}T${reservation.time}:00`;
-    const reservationDateTime = zonedTimeToUtc(reservationDateTimeStr, restaurantTimezone);
-    const reservationDateTimeInTz = utcToZonedTime(reservationDateTime, restaurantTimezone);
+    const reservationDateTime = fromZonedTime(reservationDateTimeStr, restaurantTimezone);
+    const reservationDateTimeInTz = toZonedTime(reservationDateTime, restaurantTimezone);
 
     if (reservationDateTimeInTz < now) {
       res.status(400).json({

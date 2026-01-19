@@ -1,8 +1,18 @@
 import { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import Restaurant from '../models/Restaurant.model';
 import MenuCategory from '../models/MenuCategory.model';
 import Dish from '../models/Dish.model';
 import logger from '../utils/logger';
+
+type PublicDish = {
+  id: Types.ObjectId;
+  name: string;
+  description?: string;
+  price: number;
+  allergens: string[];
+  photoUrl?: string;
+};
 
 // Get menu by API key (public endpoint)
 export const getMenuByApiKey = async (req: Request, res: Response): Promise<void> => {
@@ -61,7 +71,7 @@ export const getMenuByApiKey = async (req: Request, res: Response): Promise<void
           photoUrl: dish.photoUrl,
         });
         return acc;
-      }, {} as Record<string, typeof allDishes>);
+      }, {} as Record<string, PublicDish[]>);
 
       // Map categories with their dishes
       const categoriesWithDishes = categories.map(category => ({
@@ -109,7 +119,7 @@ export const getMenuByApiKey = async (req: Request, res: Response): Promise<void
           photoUrl: dish.photoUrl,
         });
         return acc;
-      }, {} as Record<string, typeof allDishes>);
+      }, {} as Record<string, PublicDish[]>);
 
       // Map categories with their dishes
       const categoriesWithDishes = categories.map(category => ({

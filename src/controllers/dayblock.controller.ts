@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import { z } from 'zod';
-import DayBlock from '../models/DayBlock.model';
+import DayBlock, { IDayBlock } from '../models/DayBlock.model';
 import logger from '../utils/logger';
 
 // Validation schemas
@@ -105,8 +106,8 @@ export const bulkCreateDayBlocks = async (req: Request, res: Response): Promise<
     // Filter out dates that already exist
     const newDayBlocksData = validated.dates
       .filter(dateStr => !existingDatesSet.has(dateStr))
-      .map(dateStr => ({
-        restaurantId,
+       .map(dateStr => ({
+        restaurantId: restaurantId as Types.ObjectId,
         date: new Date(dateStr),
         reason: validated.reason,
       }));
@@ -117,7 +118,7 @@ export const bulkCreateDayBlocks = async (req: Request, res: Response): Promise<
       .map(dateStr => ({ date: dateStr, reason: 'Already blocked' }));
 
     // Bulk insert all new day blocks in a single operation
-    let dayBlocks = [];
+    let dayBlocks: IDayBlock[] = [];
     if (newDayBlocksData.length > 0) {
       dayBlocks = await DayBlock.insertMany(newDayBlocksData);
     }

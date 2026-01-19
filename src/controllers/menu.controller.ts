@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { Types } from 'mongoose';
 import MenuCategory from '../models/MenuCategory.model';
 import Dish from '../models/Dish.model';
 import logger from '../utils/logger';
@@ -259,7 +260,7 @@ export const getDishes = async (req: Request, res: Response): Promise<void> => {
     const { categoryId } = req.query;
 
     interface DishFilter {
-      restaurantId: string;
+      restaurantId: Types.ObjectId;
       categoryId?: string;
     }
 
