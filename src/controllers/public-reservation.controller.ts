@@ -11,6 +11,8 @@ import {
   sendPendingReservationEmail,
   sendRestaurantNotificationEmail,
 } from '../services/emailService';
+import { sendPushNotificationToRestaurant } from '../services/pushNotificationService';
+import { emitToRestaurant, createReservationEvent } from '../services/sseService';
 import { fromZonedTime, toZonedTime, format } from 'date-fns-tz';
 
 // Validation schema for public reservation creation
@@ -125,6 +127,16 @@ export const createPublicReservation = async (req: Request, res: Response): Prom
 
     logger.info(`Public reservation created for restaurant: ${restaurant.name}, Customer: ${reservation.customerName}`);
 
+    // Send SSE event for real-time dashboard updates
+    try {
+      const event = createReservationEvent('reservation_created', reservation, restaurant._id);
+      emitToRestaurant(restaurant._id, event);
+      logger.debug(`SSE event emitted: reservation_created for reservation ${reservation._id}`);
+    } catch (sseError) {
+      logger.error('Error emitting SSE event:', sseError);
+      // Don't fail the request if SSE fails
+    }
+
     // Send email notifications
     try {
       // Send confirmation to customer
@@ -152,6 +164,24 @@ export const createPublicReservation = async (req: Request, res: Response): Prom
 
       // Send notification to restaurant
       await sendRestaurantNotificationEmail(reservationData, restaurantData, 'created');
+      
+      // Send push notification to restaurant users
+      await sendPushNotificationToRestaurant(
+        restaurant._id,
+        {
+          title: 'Nouvelle réservation',
+          body: `Nouvelle réservation de ${reservationData.customerName} pour ${reservationData.date} à ${reservationData.time}`,
+          icon: '/icons/icon-192x192.png',
+          badge: '/icons/badge-72x72.png',
+          data: {
+            reservationId: reservationData._id,
+            type: 'reservation_created',
+            url: `/reservations/${reservationData._id}`,
+          },
+          tag: `reservation-${reservationData._id}`,
+        },
+        'reservation_created'
+      );
     } catch (emailError) {
       logger.error('Error sending reservation emails:', emailError);
     }

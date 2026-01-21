@@ -10,7 +10,11 @@ import {
   sendDirectConfirmationEmail,
   sendPendingReservationEmail,
   sendReservationUpdateEmail,
+  sendReviewRequestEmail,
 } from '../services/emailService';
+import { sendPushNotificationToRestaurant } from '../services/pushNotificationService';
+import { emitToRestaurant, createReservationEvent } from '../services/sseService';
+
 
 // Validation schemas
 const createReservationSchema = z.object({
@@ -148,6 +152,40 @@ export const createReservation = async (req: Request, res: Response): Promise<vo
 
     logger.info(`Reservation created for restaurant ID: ${req.user.restaurantId}, Customer: ${reservation.customerName}`);
 
+    // Send SSE event for real-time dashboard updates
+    try {
+      const event = createReservationEvent('reservation_created', reservation, req.user.restaurantId);
+      emitToRestaurant(req.user.restaurantId, event);
+      logger.debug(`SSE event emitted: reservation_created for reservation ${reservation._id}`);
+    } catch (sseError) {
+      logger.error('Error emitting SSE event:', sseError);
+      // Don't fail the request if SSE fails
+    }
+
+    // Send push notification to restaurant users
+    try {
+      const payload = {
+        title: 'Nouvelle réservation',
+        body: `Nouvelle réservation pour ${reservation.customerName} le ${reservation.date.toISOString().split('T')[0]}`,
+        icon: '/icons/icon-192x192.png',
+        badge: '/icons/badge-72x72.png',
+        data: {
+          reservationId: reservation._id.toString(),
+          customerName: reservation.customerName,
+          date: reservation.date.toISOString().split('T')[0],
+          time: reservation.time,
+          numberOfGuests: reservation.numberOfGuests,
+          type: 'reservation_created' as const,
+          url: `/reservations/${reservation._id}`,
+        },
+        tag: `reservation-${reservation._id}`,
+      };
+      await sendPushNotificationToRestaurant(req.user.restaurantId, payload, 'reservation_created');
+    } catch (pushError) {
+      logger.error('Error sending push notification:', pushError);
+      // Don't fail the request if push notification fails
+    }
+
     // Send email notifications (only if sendEmail is true)
     if (validatedData.sendEmail !== false) {
       try {
@@ -239,6 +277,12 @@ export const updateReservation = async (req: Request, res: Response): Promise<vo
       }
     }
 
+    // Get old reservation to detect changes
+    const oldReservation = await Reservation.findOne({
+      _id: id,
+      restaurantId: req.user.restaurantId,
+    });
+    
     const updateData: any = { ...validatedData };
     if (validatedData.date) {
       updateData.date = new Date(validatedData.date);
@@ -259,6 +303,73 @@ export const updateReservation = async (req: Request, res: Response): Promise<vo
     }
 
     logger.info(`Reservation updated: ID ${id}`);
+
+    // Send push notifications for changes
+    if (oldReservation) {
+      const events: string[] = [];
+      
+      // Status changes
+      if (validatedData.status && validatedData.status !== oldReservation.status) {
+        if (validatedData.status === 'confirmed') {
+          events.push('reservation_confirmed');
+        } else if (validatedData.status === 'cancelled') {
+          events.push('reservation_cancelled');
+        }
+      }
+      
+      // Date/time/guests changes
+      const hasDateChange = validatedData.date && 
+        oldReservation.date.toString() !== new Date(validatedData.date).toString();
+      const hasTimeChange = validatedData.time && validatedData.time !== oldReservation.time;
+      const hasGuestsChange = validatedData.numberOfGuests && 
+        validatedData.numberOfGuests !== oldReservation.numberOfGuests;
+      
+      if (hasDateChange || hasTimeChange || hasGuestsChange) {
+        events.push('reservation_updated');
+      }
+      
+      // Send push notification for each event
+      for (const eventType of events) {
+        const titles = {
+          reservation_confirmed: 'Réservation confirmée',
+          reservation_cancelled: 'Réservation annulée',
+          reservation_updated: 'Réservation modifiée',
+        };
+        
+        const bodies = {
+          reservation_confirmed: `La réservation de ${reservation.customerName} pour ${reservation.date} a été confirmée`,
+          reservation_cancelled: `La réservation de ${reservation.customerName} pour ${reservation.date} a été annulée`,
+          reservation_updated: `La réservation de ${reservation.customerName} a été mise à jour`,
+        };
+        
+        await sendPushNotificationToRestaurant(
+          req.user.restaurantId,
+          {
+            title: titles[eventType as keyof typeof titles],
+            body: bodies[eventType as keyof typeof bodies],
+            icon: '/icons/icon-192x192.png',
+            badge: '/icons/badge-72x72.png',
+            data: {
+              reservationId: reservation._id.toString(),
+              type: eventType as 'reservation_confirmed' | 'reservation_cancelled' | 'reservation_updated',
+              url: `/reservations/${reservation._id}`,
+            },
+            tag: `reservation-${reservation._id}`,
+          },
+          eventType
+        );
+
+        // Send SSE event for real-time dashboard updates
+        try {
+          const event = createReservationEvent(eventType as any, reservation, req.user.restaurantId);
+          emitToRestaurant(req.user.restaurantId, event);
+          logger.debug(`SSE event emitted: ${eventType} for reservation ${reservation._id}`);
+        } catch (sseError) {
+          logger.error('Error emitting SSE event:', sseError);
+          // Don't fail the request if SSE fails
+        }
+      }
+    }
 
     // Send email notifications for status changes or date/time changes (only if sendEmail is true)
     if ((validatedData.status || validatedData.date || validatedData.time) && validatedData.sendEmail !== false) {
@@ -288,6 +399,13 @@ export const updateReservation = async (req: Request, res: Response): Promise<vo
           // If status changed to confirmed, send confirmation email with cancellation link
           if (validatedData.status === 'confirmed' && reservation.status === 'confirmed') {
             await sendConfirmationEmail(reservationData, restaurantData);
+          } else if (validatedData.status === 'completed' && reservation.status === 'completed') {
+            // If status changed to completed, send review request email (if Google link is set)
+            const restaurantWithReviewLink = {
+              ...restaurantData,
+              googleReviewLink: restaurant.googleReviewLink,
+            };
+            await sendReviewRequestEmail(reservationData, restaurantWithReviewLink);
           } else {
             // For other updates, use the new email system
             await sendReservationUpdateEmail(reservationData, restaurantData);
@@ -343,6 +461,40 @@ export const deleteReservation = async (req: Request, res: Response): Promise<vo
     }
 
     logger.info(`Reservation deleted: ID ${id}`);
+
+    // Send SSE event for real-time dashboard updates
+    try {
+      const event = createReservationEvent('reservation_cancelled', reservation, req.user.restaurantId);
+      emitToRestaurant(req.user.restaurantId, event);
+      logger.debug(`SSE event emitted: reservation_cancelled for deleted reservation ${id}`);
+    } catch (sseError) {
+      logger.error('Error emitting SSE event:', sseError);
+      // Don't fail the request if SSE fails
+    }
+
+    // Send push notification to restaurant users
+    try {
+      const payload = {
+        title: 'Réservation annulée',
+        body: `Réservation annulée pour ${reservation.customerName} le ${reservation.date.toISOString().split('T')[0]}`,
+        icon: '/icons/icon-192x192.png',
+        badge: '/icons/badge-72x72.png',
+        data: {
+          reservationId: reservation._id.toString(),
+          customerName: reservation.customerName,
+          date: reservation.date.toISOString().split('T')[0],
+          time: reservation.time,
+          numberOfGuests: reservation.numberOfGuests,
+          type: 'reservation_cancelled' as const,
+          url: `/reservations/${reservation._id}`,
+        },
+        tag: `reservation-${reservation._id}`,
+      };
+      await sendPushNotificationToRestaurant(req.user.restaurantId, payload, 'reservation_cancelled');
+    } catch (pushError) {
+      logger.error('Error sending push notification:', pushError);
+      // Don't fail the request if push notification fails
+    }
 
     res.status(204).send();
   } catch (error) {

@@ -14,6 +14,7 @@ const updateBasicInfoSchema = z.object({
   address: z.string().min(1, 'Address is required').optional(),
   phone: z.string().min(1, 'Phone is required').optional(),
   email: z.string().email('Invalid email').optional(),
+  googleReviewLink: z.string().url('Invalid URL').optional().or(z.literal('')),
 });
 
 const timeSlotSchema = z.object({

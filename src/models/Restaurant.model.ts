@@ -37,6 +37,7 @@ export interface IRestaurant extends Document {
   status: 'active' | 'inactive';
   timezone: string;
   logoUrl?: string;
+  googleReviewLink?: string;
   menu: {
     displayMode: 'pdf' | 'detailed' | 'both';
     pdfUrl?: string;
@@ -112,6 +113,10 @@ const restaurantSchema = new Schema<IRestaurant>(
       default: 'Europe/Paris',
     },
     logoUrl: {
+      type: String,
+      default: null,
+    },
+    googleReviewLink: {
       type: String,
       default: null,
     },

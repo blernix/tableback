@@ -3,8 +3,10 @@ import mongoose from 'mongoose';
 import Restaurant from '../models/Restaurant.model';
 import User from '../models/User.model';
 import Reservation from '../models/Reservation.model';
+import NotificationAnalytics from '../models/NotificationAnalytics.model';
 import logger from '../utils/logger';
 import { z } from 'zod';
+import { getRestaurantNotificationAnalytics, getNotificationDeliveryRate } from '../services/notificationAnalyticsService';
 
 // Validation schemas
 const createRestaurantSchema = z.object({
@@ -738,5 +740,319 @@ export const exportReservations = async (_req: Request, res: Response): Promise<
   } catch (error) {
     logger.error('Error exporting reservations:', error);
     res.status(500).json({ error: { message: 'Failed to export reservations' } });
+  }
+};
+
+// Get notification analytics for admin dashboard
+export const getNotificationAnalytics = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    // Get overall statistics
+    const totalNotifications = await NotificationAnalytics.countDocuments();
+    
+    // Group by notification type
+    const byType = await NotificationAnalytics.aggregate([
+      {
+        $group: {
+          _id: '$notificationType',
+          count: { $sum: 1 },
+          delivered: {
+            $sum: {
+              $cond: [
+                { $in: ['$status', ['delivered', 'opened', 'clicked']] },
+                1,
+                0
+              ]
+            }
+          },
+          failed: {
+            $sum: {
+              $cond: [
+                { $eq: ['$status', 'failed'] },
+                1,
+                0
+              ]
+            }
+          },
+        }
+      },
+      {
+        $project: {
+          type: '$_id',
+          count: 1,
+          delivered: 1,
+          failed: 1,
+          deliveryRate: {
+            $cond: [
+              { $eq: ['$count', 0] },
+              0,
+              { $divide: ['$delivered', '$count'] }
+            ]
+          },
+          _id: 0
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Group by event type
+    const byEvent = await NotificationAnalytics.aggregate([
+      {
+        $group: {
+          _id: '$eventType',
+          count: { $sum: 1 },
+        }
+      },
+      {
+        $project: {
+          event: '$_id',
+          count: 1,
+          _id: 0
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+
+    // Get recent notifications (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentStats = await NotificationAnalytics.aggregate([
+      {
+        $match: {
+          sentAt: { $gte: thirtyDaysAgo }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            date: { $dateToString: { format: '%Y-%m-%d', date: '$sentAt' } },
+            type: '$notificationType'
+          },
+          count: { $sum: 1 },
+          delivered: {
+            $sum: {
+              $cond: [
+                { $in: ['$status', ['delivered', 'opened', 'clicked']] },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: '$_id.date',
+          byType: {
+            $push: {
+              type: '$_id.type',
+              count: '$count',
+              delivered: '$delivered'
+            }
+          },
+          total: { $sum: '$count' },
+          delivered: { $sum: '$delivered' }
+        }
+      },
+      {
+        $project: {
+          date: '$_id',
+          byType: 1,
+          total: 1,
+          delivered: 1,
+          deliveryRate: {
+            $cond: [
+              { $eq: ['$total', 0] },
+              0,
+              { $divide: ['$delivered', '$total'] }
+            ]
+          },
+          _id: 0
+        }
+      },
+      { $sort: { date: 1 } },
+      { $limit: 30 }
+    ]);
+
+    // Get top restaurants by notification volume
+    const topRestaurants = await NotificationAnalytics.aggregate([
+      {
+        $group: {
+          _id: '$restaurantId',
+          count: { $sum: 1 },
+          delivered: {
+            $sum: {
+              $cond: [
+                { $in: ['$status', ['delivered', 'opened', 'clicked']] },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+      {
+        $lookup: {
+          from: 'restaurants',
+          localField: '_id',
+          foreignField: '_id',
+          as: 'restaurant'
+        }
+      },
+      {
+        $unwind: {
+          path: '$restaurant',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          restaurantId: '$_id',
+          restaurantName: '$restaurant.name',
+          count: 1,
+          delivered: 1,
+          deliveryRate: {
+            $cond: [
+              { $eq: ['$count', 0] },
+              0,
+              { $divide: ['$delivered', '$count'] }
+            ]
+          },
+          _id: 0
+        }
+      }
+    ]);
+
+    res.status(200).json({
+      analytics: {
+        total: totalNotifications,
+        byType,
+        byEvent,
+        recentStats,
+        topRestaurants,
+        summary: {
+          push: byType.find(item => item.type === 'push') || { type: 'push', count: 0, delivered: 0, failed: 0, deliveryRate: 0 },
+          email: byType.find(item => item.type === 'email') || { type: 'email', count: 0, delivered: 0, failed: 0, deliveryRate: 0 },
+          sse: byType.find(item => item.type === 'sse') || { type: 'sse', count: 0, delivered: 0, failed: 0, deliveryRate: 0 },
+        }
+      }
+    });
+  } catch (error) {
+    logger.error('Error fetching notification analytics:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch notification analytics' } });
+  }
+};
+
+// Get notification analytics for a specific restaurant
+export const getRestaurantNotificationAnalyticsController = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { restaurantId } = req.params;
+    
+    if (!mongoose.Types.ObjectId.isValid(restaurantId)) {
+      res.status(400).json({ error: { message: 'Invalid restaurant ID' } });
+      return;
+    }
+
+    const restaurant = await Restaurant.findById(restaurantId);
+    if (!restaurant) {
+      res.status(404).json({ error: { message: 'Restaurant not found' } });
+      return;
+    }
+
+    // Get analytics using the service
+    const analytics = await getRestaurantNotificationAnalytics(
+      new mongoose.Types.ObjectId(restaurantId)
+    );
+
+    // Get delivery rate
+    const deliveryRate = await getNotificationDeliveryRate(
+      new mongoose.Types.ObjectId(restaurantId),
+      30
+    );
+
+    res.status(200).json({
+      analytics: {
+        restaurant: {
+          id: restaurant._id,
+          name: restaurant.name,
+          email: restaurant.email,
+        },
+        analytics,
+        deliveryRate,
+        totalNotifications: analytics.reduce((sum, item) => sum + item.total, 0)
+      }
+    });
+  } catch (error) {
+    logger.error('Error fetching restaurant notification analytics:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch restaurant notification analytics' } });
+  }
+};
+
+// Export notification analytics as CSV
+export const exportNotificationAnalytics = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const analytics = await NotificationAnalytics.find()
+      .populate('restaurantId', 'name')
+      .populate('userId', 'email')
+      .sort({ sentAt: -1 });
+
+    // CSV header
+    const header = [
+      'ID',
+      'Restaurant Name',
+      'User Email',
+      'Notification Type',
+      'Event Type',
+      'Status',
+      'Sent At',
+      'Delivered At',
+      'Opened At',
+      'Clicked At',
+      'Failed At',
+      'Error Code',
+      'Error Message',
+      'Push Endpoint',
+      'Push Message ID',
+      'Email To',
+      'Email Message ID',
+      'SSE Client ID',
+      'Created At',
+      'Updated At'
+    ];
+    
+    // CSV rows
+    const rows = analytics.map(item => [
+      item._id.toString(),
+      `"${(item.restaurantId as any)?.name?.replace(/"/g, '""') || ''}"`,
+      `"${(item.userId as any)?.email?.replace(/"/g, '""') || ''}"`,
+      item.notificationType,
+      item.eventType,
+      item.status,
+      item.sentAt.toISOString(),
+      item.deliveredAt ? item.deliveredAt.toISOString() : '',
+      item.openedAt ? item.openedAt.toISOString() : '',
+      item.clickedAt ? item.clickedAt.toISOString() : '',
+      item.failedAt ? item.failedAt.toISOString() : '',
+      item.errorCode || '',
+      `"${(item.errorMessage || '').replace(/"/g, '""')}"`,
+      item.pushEndpoint || '',
+      item.pushMessageId || '',
+      item.emailTo || '',
+      item.emailMessageId || '',
+      item.sseClientId || '',
+      item.createdAt.toISOString(),
+      item.updatedAt.toISOString()
+    ]);
+
+    const csv = [header.join(','), ...rows.map(row => row.join(','))].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename=notification_analytics.csv');
+    res.send(csv);
+  } catch (error) {
+    logger.error('Error exporting notification analytics:', error);
+    res.status(500).json({ error: { message: 'Failed to export notification analytics' } });
   }
 };

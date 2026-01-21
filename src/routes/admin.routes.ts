@@ -32,5 +32,10 @@ router.get('/restaurants/:id/analytics', adminController.getRestaurantAnalytics)
 router.get('/export/restaurants', adminController.exportRestaurants);
 router.get('/export/users', adminController.exportUsers);
 router.get('/export/reservations', adminController.exportReservations);
+router.get('/export/notifications', adminController.exportNotificationAnalytics);
+
+// Notification analytics
+router.get('/analytics/notifications', adminController.getNotificationAnalytics);
+router.get('/analytics/notifications/restaurant/:restaurantId', adminController.getRestaurantNotificationAnalyticsController);
 
 export default router;

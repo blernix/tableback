@@ -502,6 +502,46 @@ export async function sendReservationUpdateEmail(
   });
 }
 
+/**
+ * 8. SEND REVIEW REQUEST EMAIL
+ *
+ * Sent when reservation is marked as completed - asks customer to leave a Google review
+ *
+ * Template: review-request.html
+ * Variables: customerName, restaurantName, restaurantPhone, restaurantEmail, googleReviewLink
+ *
+ * @param reservation - Reservation object
+ * @param restaurant - Restaurant object (with googleReviewLink)
+ */
+export async function sendReviewRequestEmail(
+  reservation: Reservation,
+  restaurant: Restaurant & { googleReviewLink?: string }
+): Promise<EmailResult> {
+  // Only send if restaurant has a Google review link
+  if (!restaurant.googleReviewLink) {
+    logger.info(`Skipping review request email - no Google review link set for restaurant ${restaurant._id}`);
+    return { success: true, skipped: true };
+  }
+
+  return sendEmail({
+    to: reservation.customerEmail,
+    toName: reservation.customerName,
+    subject: `⭐ Votre avis compte pour nous - ${restaurant.name}`,
+    templateName: 'review-request',
+    params: {
+      customerName: reservation.customerName,
+      restaurantName: restaurant.name,
+      restaurantPhone: restaurant.phone,
+      restaurantEmail: restaurant.email,
+      googleReviewLink: restaurant.googleReviewLink,
+    },
+    replyTo: {
+      email: restaurant.email,
+      name: restaurant.name,
+    },
+  });
+}
+
 // Export sendEmail for testing purposes
 export { sendEmail };
 

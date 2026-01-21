@@ -29,6 +29,10 @@ const envConfig: EnvValidation = {
     SMTP_SECURE: 'Use secure connection (true/false)',
     ADMIN_EMAIL: 'Email for initial admin user (default: admin@tablemaster.com)',
     ADMIN_PASSWORD: 'Password for initial admin user (default: admin123)',
+    VAPID_PUBLIC_KEY: 'VAPID public key for web push notifications',
+    VAPID_PRIVATE_KEY: 'VAPID private key for web push notifications',
+    VAPID_SUBJECT: 'VAPID subject (mailto: email address)',
+    PUSH_ENABLED: 'Enable push notifications (true/false, default: true)',
   },
 };
 

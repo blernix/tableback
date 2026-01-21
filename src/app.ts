@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import logger from './utils/logger';
 import healthRoutes from './routes/health.routes';
 import authRoutes from './routes/auth.routes';
@@ -13,6 +14,7 @@ import publicRoutes from './routes/public.routes';
 import reservationRoutes from './routes/reservation.routes';
 import dayBlockRoutes from './routes/dayblock.routes';
 import userRoutes from './routes/user.routes';
+import notificationRoutes from './routes/notification.routes';
 import { sanitizeRequest } from './middleware/sanitize.middleware';
 
 // Load environment variables
@@ -60,6 +62,9 @@ app.use('/api/', limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Cookie parser middleware
+app.use(cookieParser());
+
 // CORS configuration
 const corsOrigins = process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'];
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -92,6 +97,7 @@ app.use('/api/menu', menuRoutes);
 app.use('/api/reservations', reservationRoutes);
 app.use('/api/day-blocks', dayBlockRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/public', publicRoutes);
 
 // 404 handler

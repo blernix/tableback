@@ -75,6 +75,16 @@ export const register = async (req: Request, res: Response): Promise<void> => {
 
     logger.info(`User registered: ${user.email} (${user.role})`);
 
+    // Set HttpOnly cookie for SSE authentication
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' as 'strict' | 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: '/',
+    };
+    res.cookie('auth_token', token, cookieOptions);
+
     res.status(201).json({
       user: {
         id: user._id,
@@ -135,6 +145,16 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     logger.info(`User logged in: ${user.email}`);
 
+    // Set HttpOnly cookie for SSE authentication
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' as 'strict' | 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: '/',
+    };
+    res.cookie('auth_token', token, cookieOptions);
+
     res.status(200).json({
       user: {
         id: user._id,
@@ -165,6 +185,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 export const logout = async (req: Request, res: Response): Promise<void> => {
   try {
     logger.info(`User logged out: ${req.user?.email}`);
+
+    // Clear the auth cookie
+    res.clearCookie('auth_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' as 'strict' | 'lax',
+      path: '/',
+    });
+
     res.status(200).json({ message: 'Logged out successfully' });
   } catch (error) {
     logger.error('Logout error:', error);
