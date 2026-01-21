@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import User from '../models/User.model';
 import logger from '../utils/logger';
 import { z } from 'zod';
@@ -30,7 +31,18 @@ export const getServerUsers = async (req: Request, res: Response): Promise<void>
       .select('email status createdAt updatedAt')
       .sort({ createdAt: -1 });
 
-    res.status(200).json({ servers });
+    // Transform _id to id for consistent API response
+    const serversResponse = servers.map(server => ({
+      id: server._id.toString(),
+      email: server.email,
+      role: 'server' as const,
+      status: server.status,
+      restaurantId: server.restaurantId?.toString(),
+      createdAt: server.createdAt,
+      updatedAt: server.updatedAt,
+    }));
+
+    res.status(200).json({ servers: serversResponse });
   } catch (error) {
     logger.error('Error fetching server users:', error);
     res.status(500).json({ error: { message: 'Failed to fetch server users' } });
@@ -102,6 +114,13 @@ export const updateServerUser = async (req: Request, res: Response): Promise<voi
       return;
     }
 
+    // Validate MongoDB ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      logger.warn(`Invalid server user ID format: ${id}`);
+      res.status(400).json({ error: { message: 'Invalid server user ID format' } });
+      return;
+    }
+
     const validatedData = updateServerSchema.parse(req.body);
 
     // Find server and verify it belongs to the restaurant
@@ -158,6 +177,13 @@ export const deleteServerUser = async (req: Request, res: Response): Promise<voi
 
     if (!req.user?.restaurantId) {
       res.status(403).json({ error: { message: 'User not associated with any restaurant' } });
+      return;
+    }
+
+    // Validate MongoDB ObjectId format
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      logger.warn(`Invalid server user ID format: ${id}`);
+      res.status(400).json({ error: { message: 'Invalid server user ID format' } });
       return;
     }
 

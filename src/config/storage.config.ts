@@ -77,6 +77,7 @@ export const uploadToGCS = async (
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     if (!file) {
+      console.error('GCS Upload: No file provided');
       reject(new Error('No file provided'));
       return;
     }
@@ -84,6 +85,8 @@ export const uploadToGCS = async (
     // Generate unique filename
     const fileExtension = path.extname(file.originalname);
     const fileName = `${folder}/${crypto.randomBytes(16).toString('hex')}${fileExtension}`;
+
+    console.log(`GCS Upload: Starting upload to ${bucketName}/${fileName}`);
 
     const blob = bucket.file(fileName);
     const blobStream = blob.createWriteStream({
@@ -97,12 +100,19 @@ export const uploadToGCS = async (
     });
 
     blobStream.on('error', (err) => {
-      reject(err);
+      console.error('GCS Upload Error:', {
+        message: err.message,
+        code: (err as any).code,
+        fileName,
+        bucket: bucketName,
+      });
+      reject(new Error(`GCS upload failed: ${err.message}`));
     });
 
     blobStream.on('finish', async () => {
       // Get public URL (bucket already has public access configured)
       const publicUrl = `https://storage.googleapis.com/${bucketName}/${fileName}`;
+      console.log(`GCS Upload: Success - ${publicUrl}`);
       resolve(publicUrl);
     });
 

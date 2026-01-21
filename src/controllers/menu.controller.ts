@@ -460,6 +460,7 @@ export const toggleDishAvailability = async (req: Request, res: Response): Promi
 export const uploadDishPhoto = async (req: Request, res: Response): Promise<void> => {
   try {
     if (!req.user?.restaurantId) {
+      logger.warn('Upload attempt without restaurant association');
       res.status(400).json({ error: { message: 'User not associated with a restaurant' } });
       return;
     }
@@ -467,9 +468,12 @@ export const uploadDishPhoto = async (req: Request, res: Response): Promise<void
     const { id } = req.params;
 
     if (!req.file) {
+      logger.warn(`No file provided for dish ${id}`);
       res.status(400).json({ error: { message: 'No image file provided' } });
       return;
     }
+
+    logger.info(`Uploading photo for dish ${id}, file: ${req.file.originalname}, size: ${req.file.size} bytes, type: ${req.file.mimetype}`);
 
     // Verify dish belongs to restaurant
     const dish = await Dish.findOne({
@@ -478,6 +482,7 @@ export const uploadDishPhoto = async (req: Request, res: Response): Promise<void
     });
 
     if (!dish) {
+      logger.warn(`Dish ${id} not found for restaurant ${req.user.restaurantId}`);
       res.status(404).json({ error: { message: 'Dish not found' } });
       return;
     }
@@ -485,6 +490,7 @@ export const uploadDishPhoto = async (req: Request, res: Response): Promise<void
     // Delete old photo if exists
     if (dish.photoUrl) {
       try {
+        logger.info(`Deleting old photo: ${dish.photoUrl}`);
         await deleteFromGCS(dish.photoUrl);
       } catch (error) {
         logger.warn(`Failed to delete old dish photo: ${error}`);
@@ -492,7 +498,9 @@ export const uploadDishPhoto = async (req: Request, res: Response): Promise<void
     }
 
     // Upload new photo to GCS
+    logger.info('Starting GCS upload...');
     const photoUrl = await uploadToGCS(req.file, 'uploads/dishes');
+    logger.info(`GCS upload successful: ${photoUrl}`);
 
     // Update dish with new photo URL
     dish.photoUrl = photoUrl;
@@ -500,11 +508,17 @@ export const uploadDishPhoto = async (req: Request, res: Response): Promise<void
 
     const populatedDish = await Dish.findById(dish._id).populate('categoryId', 'name');
 
-    logger.info(`Dish photo uploaded: ${dish.name} (ID: ${dish._id})`);
+    logger.info(`Dish photo uploaded successfully: ${dish.name} (ID: ${dish._id})`);
 
     res.status(200).json({ dish: populatedDish });
   } catch (error) {
-    logger.error('Error uploading dish photo:', error);
+    logger.error('Error uploading dish photo:', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      dishId: req.params.id,
+      fileName: req.file?.originalname,
+      fileSize: req.file?.size,
+    });
     res.status(500).json({ error: { message: 'Failed to upload dish photo' } });
   }
 };

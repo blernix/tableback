@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { Types } from 'mongoose';
+import crypto from 'crypto';
 import logger from '../utils/logger';
 import { logSseNotification } from './notificationAnalyticsService';
 
@@ -100,7 +101,7 @@ export const initializeSSE = (req: Request, res: Response): void => {
 
   // Store client connection
   const client: SSEClient = {
-    id: Date.now().toString(),
+    id: crypto.randomUUID(), // Use UUID to avoid collisions
     restaurantId,
     userId,
     res,
@@ -111,15 +112,6 @@ export const initializeSSE = (req: Request, res: Response): void => {
 
   // Log connection
   logger.info(`SSE client connected: ${client.id} (restaurant: ${client.restaurantId})`);
-
-  // Handle client disconnect
-  req.on('close', () => {
-    const index = connectedClients.findIndex(c => c.id === client.id);
-    if (index !== -1) {
-      connectedClients.splice(index, 1);
-      logger.info(`SSE client disconnected: ${client.id}`);
-    }
-  });
 
   // Send heartbeat every 30 seconds to keep connection alive
   const heartbeat = setInterval(() => {
@@ -134,9 +126,17 @@ export const initializeSSE = (req: Request, res: Response): void => {
     }
   }, 30000);
 
-  // Clear interval on disconnect
+  // Handle client disconnect - SINGLE listener for all cleanup
   req.on('close', () => {
+    // Clear the heartbeat interval
     clearInterval(heartbeat);
+
+    // Remove client from connected clients list
+    const index = connectedClients.findIndex(c => c.id === client.id);
+    if (index !== -1) {
+      connectedClients.splice(index, 1);
+      logger.info(`SSE client disconnected: ${client.id}`);
+    }
   });
 };
 

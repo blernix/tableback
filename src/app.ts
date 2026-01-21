@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
+import multer from 'multer';
 import logger from './utils/logger';
 import healthRoutes from './routes/health.routes';
 import authRoutes from './routes/auth.routes';
@@ -65,6 +66,16 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Cookie parser middleware
 app.use(cookieParser());
 
+// Error handler for malformed JSON
+app.use((error: any, req: Request, res: Response, next: NextFunction): void => {
+  if (error instanceof SyntaxError && 'body' in error) {
+    logger.error('Malformed JSON in request', { path: req.path, error: error.message });
+    res.status(400).json({ error: { message: 'Invalid JSON in request body' } });
+    return;
+  }
+  next(error);
+});
+
 // CORS configuration
 const corsOrigins = process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'];
 const isDevelopment = process.env.NODE_ENV === 'development';
@@ -111,6 +122,40 @@ app.use((_req: Request, res: Response) => {
 
 // Error handling middleware
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  // Handle Multer errors specifically
+  if (err instanceof multer.MulterError) {
+    logger.error('Multer error:', err);
+
+    let message = 'File upload error';
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      message = 'File too large. Maximum size is 10MB';
+    } else if (err.code === 'LIMIT_FILE_COUNT') {
+      message = 'Too many files';
+    } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      message = 'Unexpected field name';
+    }
+
+    res.status(400).json({
+      error: {
+        message,
+        code: err.code,
+      },
+    });
+    return;
+  }
+
+  // Handle file filter errors
+  if (err.message && err.message.includes('Only PDF and image files')) {
+    logger.error('File type error:', err);
+    res.status(400).json({
+      error: {
+        message: err.message,
+      },
+    });
+    return;
+  }
+
+  // Generic error handling
   logger.error('Error:', err);
 
   const statusCode = err.statusCode || 500;
