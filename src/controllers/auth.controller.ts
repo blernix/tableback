@@ -7,6 +7,7 @@ import logger from '../utils/logger';
 import { z } from 'zod';
 import { sendPasswordResetEmail } from '../services/emailService';
 import { validatePasswordResetToken } from '../services/tokenService';
+import { generateTempToken } from '../utils/tempToken';
 
 // Validation schemas
 const registerSchema = z.object({
@@ -33,6 +34,11 @@ const resetPasswordSchema = z.object({
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
   newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+});
+
+const changeEmailSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newEmail: z.string().email('Invalid email format'),
 });
 
 // Register new user (admin only operation via admin routes)
@@ -135,7 +141,24 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Generate token
+    // Check if 2FA is enabled
+    if (user.twoFactorEnabled) {
+      // Generate temporary token for 2FA verification (expires in 5 minutes)
+      const tempToken = generateTempToken(user._id.toString());
+      
+      logger.info(`2FA required for login: ${user.email}`);
+      
+      res.status(200).json({
+        requiresTwoFactor: true,
+        tempToken,
+        userId: user._id,
+        email: user.email,
+        message: 'Two-factor authentication required. Please enter your verification code.',
+      });
+      return;
+    }
+
+    // Generate token (2FA not enabled)
     const token = generateToken({
       userId: user._id,
       email: user.email,
@@ -289,7 +312,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
         restaurantId?: string;
         exp?: number;
       };
-    } catch (error) {
+    } catch (_error) {
       res.status(401).json({ error: { message: 'Invalid token' } });
       return;
     }
@@ -434,5 +457,95 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
 
     logger.error('Change password error:', error);
     res.status(500).json({ error: { message: 'Failed to change password' } });
+  }
+};
+
+// Change user email (requires authentication and current password)
+export const changeEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const validatedData = changeEmailSchema.parse(req.body);
+
+    // Get authenticated user from request
+    if (!req.user?.userId) {
+      res.status(401).json({ error: { message: 'Unauthorized' } });
+      return;
+    }
+
+    // Find user
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      res.status(404).json({ error: { message: 'User not found' } });
+      return;
+    }
+
+    // Verify current password
+    const isPasswordValid = await user.comparePassword(validatedData.currentPassword);
+    if (!isPasswordValid) {
+      res.status(401).json({ error: { message: 'Current password is incorrect' } });
+      return;
+    }
+
+    // Check if new email already exists
+    const existingUser = await User.findOne({ email: validatedData.newEmail });
+    if (existingUser && existingUser._id.toString() !== user._id.toString()) {
+      res.status(409).json({ error: { message: 'Email already in use' } });
+      return;
+    }
+
+    // Check if new email is same as current
+    if (user.email === validatedData.newEmail) {
+      res.status(400).json({ error: { message: 'New email must be different from current email' } });
+      return;
+    }
+
+    const oldEmail = user.email;
+
+    // Update email
+    user.email = validatedData.newEmail;
+    await user.save();
+
+    logger.info(`Email changed successfully from ${oldEmail} to ${user.email}`);
+
+    // Generate new token with updated email
+    const token = generateToken({
+      userId: user._id,
+      email: user.email,
+      role: user.role,
+      restaurantId: user.restaurantId,
+    });
+
+    // Set HttpOnly cookie with new token
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' as 'strict' | 'lax',
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      path: '/',
+    };
+    res.cookie('auth_token', token, cookieOptions);
+
+    res.status(200).json({
+      message: 'Email changed successfully',
+      user: {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        restaurantId: user.restaurantId,
+      },
+      token,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        error: {
+          message: 'Validation error',
+          details: error.errors,
+        },
+      });
+      return;
+    }
+
+    logger.error('Change email error:', error);
+    res.status(500).json({ error: { message: 'Failed to change email' } });
   }
 };

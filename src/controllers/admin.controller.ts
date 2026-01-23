@@ -1056,3 +1056,173 @@ export const exportNotificationAnalytics = async (_req: Request, res: Response):
     res.status(500).json({ error: { message: 'Failed to export notification analytics' } });
   }
 };
+
+// Get restaurant monitoring data
+export const getRestaurantMonitoring = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    // Get all restaurants
+    const restaurants = await Restaurant.find().select('_id name status createdAt tablesConfig reservationConfig');
+
+    // Get date range for current month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    // Aggregate reservations for current month grouped by restaurant
+    const reservationStats = await Reservation.aggregate([
+      {
+        $match: {
+          date: { $gte: startOfMonth, $lte: endOfMonth }
+        }
+      },
+      {
+        $group: {
+          _id: '$restaurantId',
+          totalReservations: { $sum: 1 },
+          totalGuests: { $sum: '$numberOfGuests' },
+          cancelledCount: {
+            $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] }
+          },
+          confirmedCount: {
+            $sum: { $cond: [{ $eq: ['$status', 'confirmed'] }, 1, 0] }
+          },
+          completedCount: {
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    // Get last activity (last reservation) for each restaurant
+    const lastActivityResults = await Reservation.aggregate([
+      {
+        $sort: { createdAt: -1 }
+      },
+      {
+        $group: {
+          _id: '$restaurantId',
+          lastActivity: { $first: '$createdAt' }
+        }
+      }
+    ]);
+
+    // Get notification analytics for each restaurant (last 30 days)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const notificationStats = await NotificationAnalytics.aggregate([
+      {
+        $match: {
+          sentAt: { $gte: thirtyDaysAgo }
+        }
+      },
+      {
+        $group: {
+          _id: '$restaurantId',
+          totalSent: { $sum: 1 },
+          delivered: {
+            $sum: { $cond: [{ $in: ['$status', ['delivered', 'opened', 'clicked']] }, 1, 0] }
+          },
+          failed: {
+            $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
+          }
+        }
+      }
+    ]);
+
+    // Create lookup maps for efficient access
+    const reservationMap = new Map(
+      reservationStats.map(stat => [stat._id?.toString(), stat])
+    );
+    const lastActivityMap = new Map(
+      lastActivityResults.map(result => [result._id?.toString(), result.lastActivity])
+    );
+    const notificationMap = new Map(
+      notificationStats.map(stat => [stat._id?.toString(), stat])
+    );
+
+    // Build monitoring data for each restaurant
+    const monitoringData = restaurants.map(restaurant => {
+      const restaurantId = restaurant._id.toString();
+      const reservationStat = reservationMap.get(restaurantId) || { totalReservations: 0, totalGuests: 0, cancelledCount: 0, confirmedCount: 0, completedCount: 0 };
+      const lastActivity = lastActivityMap.get(restaurantId);
+      const notificationStat = notificationMap.get(restaurantId) || { totalSent: 0, delivered: 0, failed: 0 };
+
+      // Calculate notification delivery rate
+      const deliveryRate = notificationStat.totalSent > 0
+        ? Math.round((notificationStat.delivered / notificationStat.totalSent) * 100)
+        : 100; // 100% if no notifications sent yet
+
+      // Calculate cancellation rate
+      const cancellationRate = reservationStat.totalReservations > 0
+        ? Math.round((reservationStat.cancelledCount / reservationStat.totalReservations) * 100)
+        : 0;
+
+      // Calculate estimated revenue (optional metric)
+      const averagePricePerCover = restaurant.reservationConfig?.averagePrice || 0;
+      const estimatedRevenue = reservationStat.totalGuests * averagePricePerCover;
+
+      // Detect problems
+      const problems: string[] = [];
+
+      // Problem 1: Low notification delivery rate
+      if (notificationStat.totalSent > 10 && deliveryRate < 75) {
+        problems.push('Taux de livraison des notifications faible');
+      }
+
+      // Problem 2: No activity in last 30 days
+      if (!lastActivity || (now.getTime() - new Date(lastActivity).getTime()) > 30 * 24 * 60 * 60 * 1000) {
+        problems.push('Aucune activité depuis 30 jours');
+      }
+
+      // Problem 3: High cancellation rate
+      if (reservationStat.totalReservations > 5 && cancellationRate > 30) {
+        problems.push('Taux d\'annulation élevé');
+      }
+
+      // Problem 4: Restaurant inactive
+      if (restaurant.status === 'inactive') {
+        problems.push('Restaurant inactif');
+      }
+
+      // Health status based on problems
+      let healthStatus: 'healthy' | 'warning' | 'critical' = 'healthy';
+      if (problems.length >= 2) {
+        healthStatus = 'critical';
+      } else if (problems.length === 1) {
+        healthStatus = 'warning';
+      }
+
+      return {
+        id: restaurant._id,
+        name: restaurant.name,
+        status: restaurant.status,
+        healthStatus,
+        metrics: {
+          reservationsThisMonth: reservationStat.totalReservations,
+          notificationDeliveryRate: deliveryRate,
+          lastActivity: lastActivity || null,
+          problems,
+        },
+        optionalMetrics: {
+          estimatedRevenue,
+          cancellationRate,
+          confirmedReservations: reservationStat.confirmedCount,
+          completedReservations: reservationStat.completedCount,
+          totalGuests: reservationStat.totalGuests,
+        }
+      };
+    });
+
+    res.status(200).json({
+      restaurants: monitoringData,
+      summary: {
+        total: restaurants.length,
+        healthy: monitoringData.filter(r => r.healthStatus === 'healthy').length,
+        warning: monitoringData.filter(r => r.healthStatus === 'warning').length,
+        critical: monitoringData.filter(r => r.healthStatus === 'critical').length,
+      }
+    });
+  } catch (error) {
+    logger.error('Error fetching restaurant monitoring data:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch monitoring data' } });
+  }
+};

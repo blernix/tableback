@@ -1,16 +1,30 @@
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
+import { getConnectedClientsCount } from '../services/sseService';
 
 const router = Router();
 
 router.get('/health', (_req: Request, res: Response) => {
+  const memoryUsage = process.memoryUsage();
+
   const health = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV,
     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    connections: {
+      sse: getConnectedClientsCount(),
+      mongodb: {
+        poolSize: mongoose.connection.db?.admin ? 'connected' : 'n/a',
+      },
+    },
+    memory: {
+      rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`,
+      heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
+    },
   };
 
   res.status(200).json(health);

@@ -1,11 +1,6 @@
 import mongoose from 'mongoose';
 import logger from '../utils/logger';
 
-let isShuttingDown = false;
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
-const RECONNECT_DELAY = 5000; // 5 seconds
-
 const connectDatabase = async (): Promise<void> => {
   try {
     const mongoUri = process.env.MONGODB_URI;
@@ -14,77 +9,64 @@ const connectDatabase = async (): Promise<void> => {
       throw new Error('MONGODB_URI is not defined in environment variables');
     }
 
-    // Configure Mongoose with production-ready options
+    // Configure Mongoose with production-ready options for hundreds of concurrent users
+    // Mongoose automatically handles reconnection, so we don't need manual retry logic
     await mongoose.connect(mongoUri, {
-      serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
-      socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
-      maxPoolSize: 10, // Maximum number of socket connections
-      minPoolSize: 2, // Minimum number of socket connections
+      serverSelectionTimeoutMS: 30000, // Timeout after 30s
+      socketTimeoutMS: 25000, // Socket timeout 25s - CRITICAL: prevents queries from hanging forever
+      maxPoolSize: 200, // Support up to 200 concurrent connections (for hundreds of users)
+      minPoolSize: 10, // Keep 10 connections ready
+      maxIdleTimeMS: 60000, // Close idle connections after 1 minute to free resources
       retryWrites: true, // Retry write operations
       retryReads: true, // Retry read operations
+      heartbeatFrequencyMS: 10000, // Send heartbeat every 10s to keep connection alive
+      connectTimeoutMS: 30000, // Initial connection timeout
+      compressors: ['zlib'], // Compress network traffic to reduce bandwidth
+      maxConnecting: 10, // Limit simultaneous connection attempts
     });
 
     logger.info('MongoDB connected successfully');
-    reconnectAttempts = 0; // Reset reconnect attempts on successful connection
 
+    // Enable slow query logging (queries taking longer than 100ms)
+    mongoose.set('debug', (collectionName: string, method: string, query: any, _doc: any, options: any) => {
+      const startTime = Date.now();
+      logger.debug(`MongoDB Query: ${collectionName}.${method}`, { query, options });
+
+      // Log slow queries
+      setTimeout(() => {
+        const duration = Date.now() - startTime;
+        if (duration > 100) {
+          logger.warn(`Slow MongoDB query detected (${duration}ms): ${collectionName}.${method}`, { query });
+        }
+      }, 0);
+    });
+
+    // Setup event listeners for MongoDB connection events
+    // These are for logging only - Mongoose handles reconnection automatically
     mongoose.connection.on('error', (error) => {
       logger.error('MongoDB connection error:', error);
     });
 
     mongoose.connection.on('disconnected', () => {
-      logger.warn('MongoDB disconnected');
+      logger.warn('MongoDB disconnected. Mongoose will attempt automatic reconnection...');
+    });
 
-      // Attempt to reconnect if not shutting down
-      if (!isShuttingDown) {
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          reconnectAttempts++;
-          logger.info(`Attempting to reconnect to MongoDB (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+    mongoose.connection.on('connecting', () => {
+      logger.info('MongoDB attempting to reconnect...');
+    });
 
-          setTimeout(() => {
-            connectDatabase().catch(err => {
-              logger.error('Failed to reconnect to MongoDB:', err);
-
-              // If all reconnect attempts failed, exit process
-              if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-                logger.error('Max reconnection attempts reached. Exiting...');
-                process.exit(1);
-              }
-            });
-          }, RECONNECT_DELAY);
-        }
-      }
+    mongoose.connection.on('connected', () => {
+      logger.info('MongoDB connected');
     });
 
     mongoose.connection.on('reconnected', () => {
       logger.info('MongoDB reconnected successfully');
-      reconnectAttempts = 0;
     });
 
-    process.on('SIGINT', async () => {
-      isShuttingDown = true;
-      await mongoose.connection.close();
-      logger.info('MongoDB connection closed due to app termination');
-      process.exit(0);
-    });
   } catch (error) {
     logger.error('Failed to connect to MongoDB:', error);
-
-    // Retry connection if not at max attempts
-    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-      reconnectAttempts++;
-      logger.info(`Retrying MongoDB connection (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
-
-      setTimeout(() => {
-        connectDatabase().catch(err => {
-          logger.error('Retry failed:', err);
-          if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            process.exit(1);
-          }
-        });
-      }, RECONNECT_DELAY);
-    } else {
-      process.exit(1);
-    }
+    // Let the calling code (server.ts) handle the error
+    throw error;
   }
 };
 

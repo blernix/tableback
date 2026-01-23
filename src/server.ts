@@ -13,19 +13,44 @@ function setupErrorHandlers(): void {
   // Catch uncaught exceptions
   process.on('uncaughtException', (error: Error) => {
     logger.error('Uncaught Exception:', error);
-    // Give time for logging before exit
-    setTimeout(() => {
-      process.exit(1);
-    }, 1000);
+
+    // Only exit on critical errors, not MongoDB connection issues
+    const isCritical = !(
+      error.message?.includes('Mongo') ||
+      error.message?.includes('ECONNREFUSED') ||
+      error.message?.includes('socket') ||
+      error.message?.includes('timeout')
+    );
+
+    if (isCritical) {
+      logger.error('Critical error detected, exiting...');
+      setTimeout(() => {
+        process.exit(1);
+      }, 1000);
+    } else {
+      logger.warn('Non-critical error, continuing...');
+    }
   });
 
   // Catch unhandled promise rejections
-  process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
-    logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    // Give time for logging before exit
-    setTimeout(() => {
-      process.exit(1);
-    }, 1000);
+  process.on('unhandledRejection', (reason: any, _promise: Promise<any>) => {
+    logger.error('Unhandled Rejection:', reason);
+
+    // Don't exit on MongoDB errors - they're handled by Mongoose reconnection logic
+    const reasonStr = String(reason);
+    const isMongoError = reasonStr.includes('Mongo') ||
+                        reasonStr.includes('ECONNREFUSED') ||
+                        reasonStr.includes('socket') ||
+                        reasonStr.includes('timeout');
+
+    if (!isMongoError) {
+      logger.error('Non-MongoDB rejection, exiting...');
+      setTimeout(() => {
+        process.exit(1);
+      }, 1000);
+    } else {
+      logger.warn('MongoDB-related rejection, letting Mongoose handle it...');
+    }
   });
 
   logger.info('Global error handlers registered');
@@ -54,24 +79,25 @@ const startServer = async () => {
       logger.info(`${signal} received. Starting graceful shutdown...`);
 
       // Stop accepting new connections
-      server.close(() => {
+      server.close(async () => {
         logger.info('HTTP server closed');
-      });
 
-      // Give existing connections 10 seconds to finish
-      setTimeout(async () => {
-        logger.info('Forcing shutdown after timeout');
-
-        // Close MongoDB connection
+        // Close MongoDB connection gracefully
         try {
           await mongoose.connection.close(false);
-          logger.info('MongoDB connection closed');
+          logger.info('MongoDB connection closed gracefully');
         } catch (error) {
           logger.error('Error closing MongoDB:', error);
         }
 
         process.exit(0);
-      }, 10000);
+      });
+
+      // Force shutdown after 15 seconds if graceful shutdown hangs
+      setTimeout(() => {
+        logger.warn('Forcing shutdown after timeout');
+        process.exit(1);
+      }, 15000);
     };
 
     // Register graceful shutdown handlers

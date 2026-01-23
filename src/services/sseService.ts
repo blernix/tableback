@@ -11,6 +11,8 @@ interface SSEClient {
   userId: Types.ObjectId | string;
   res: Response;
   connectedAt: Date;
+  heartbeatInterval?: NodeJS.Timeout;
+  maxDurationTimeout?: NodeJS.Timeout;
 }
 
 // Store connected clients
@@ -19,6 +21,9 @@ const connectedClients: SSEClient[] = [];
 // Configuration
 const MAX_CONNECTIONS_PER_USER = 5; // Maximum SSE connections per user
 const MAX_CONNECTIONS_PER_RESTAURANT = 50; // Maximum SSE connections per restaurant
+const MAX_CONNECTION_DURATION = 60 * 60 * 1000; // 1 hour maximum per connection
+const HEARTBEAT_INTERVAL = 30000; // 30 seconds
+const CLEANUP_INTERVAL = 60000; // Clean up dead connections every 1 minute
 
 // Event types
 export type ReservationEventType = 'reservation_created' | 'reservation_updated' | 'reservation_cancelled' | 'reservation_confirmed' | 'reservation_completed';
@@ -113,30 +118,66 @@ export const initializeSSE = (req: Request, res: Response): void => {
   // Log connection
   logger.info(`SSE client connected: ${client.id} (restaurant: ${client.restaurantId})`);
 
-  // Send heartbeat every 30 seconds to keep connection alive
-  const heartbeat = setInterval(() => {
-    if (!req.destroyed) {
-      try {
-        res.write(': heartbeat\n\n');
-      } catch (_error) {
-        clearInterval(heartbeat);
-      }
-    } else {
-      clearInterval(heartbeat);
+  // Helper function to cleanup client connection
+  const cleanupClient = (reason: string) => {
+    // Clear intervals and timeouts
+    if (client.heartbeatInterval) {
+      clearInterval(client.heartbeatInterval);
     }
-  }, 30000);
+    if (client.maxDurationTimeout) {
+      clearTimeout(client.maxDurationTimeout);
+    }
 
-  // Handle client disconnect - SINGLE listener for all cleanup
-  req.on('close', () => {
-    // Clear the heartbeat interval
-    clearInterval(heartbeat);
+    // End response if not already ended
+    try {
+      if (!res.writableEnded) {
+        res.end();
+      }
+    } catch (error) {
+      // Ignore errors when ending response
+    }
 
     // Remove client from connected clients list
     const index = connectedClients.findIndex(c => c.id === client.id);
     if (index !== -1) {
       connectedClients.splice(index, 1);
-      logger.info(`SSE client disconnected: ${client.id}`);
+      logger.info(`SSE client ${client.id} disconnected (${reason})`);
     }
+  };
+
+  // Send heartbeat every 30 seconds to keep connection alive
+  const heartbeatInterval = setInterval(() => {
+    try {
+      if (req.destroyed || res.writableEnded) {
+        cleanupClient('destroyed');
+        return;
+      }
+      res.write(': heartbeat\n\n');
+    } catch (error) {
+      logger.warn(`Heartbeat failed for client ${client.id}, cleaning up`);
+      cleanupClient('heartbeat_error');
+    }
+  }, HEARTBEAT_INTERVAL);
+
+  // Set maximum connection duration (1 hour)
+  const maxDurationTimeout = setTimeout(() => {
+    logger.info(`SSE client ${client.id} reached max duration, disconnecting`);
+    cleanupClient('max_duration');
+  }, MAX_CONNECTION_DURATION);
+
+  // Store intervals/timeouts in client object
+  client.heartbeatInterval = heartbeatInterval;
+  client.maxDurationTimeout = maxDurationTimeout;
+
+  // Handle client disconnect - SINGLE listener for all cleanup
+  req.on('close', () => {
+    cleanupClient('client_closed');
+  });
+
+  // Handle request errors
+  req.on('error', (error) => {
+    logger.error(`SSE client ${client.id} error:`, error);
+    cleanupClient('request_error');
   });
 };
 
@@ -174,7 +215,7 @@ export const emitToRestaurant = (restaurantId: string | Types.ObjectId, event: R
       client.res.write(`data: ${eventData}\n\n`);
       
       logger.debug(`SSE event sent to client ${client.id}: ${event.type}`);
-    } catch (_error) {
+    } catch {
       // Client connection is broken, remove it
       const index = connectedClients.findIndex(c => c.id === client.id);
       if (index !== -1) {
@@ -199,7 +240,7 @@ export const emitToAll = (event: ReservationEvent): void => {
     try {
       client.res.write(`event: ${event.type}\n`);
       client.res.write(`data: ${eventData}\n\n`);
-    } catch (_error) {
+    } catch {
       // Client connection is broken, remove it
       const index = connectedClients.findIndex(c => c.id === client.id);
       if (index !== -1) {
@@ -243,3 +284,60 @@ export const createReservationEvent = (
     timestamp: new Date().toISOString(),
   };
 };
+
+// Periodic cleanup of dead connections (every 1 minute)
+setInterval(() => {
+  const now = Date.now();
+  const deadClients: string[] = [];
+
+  connectedClients.forEach((client) => {
+    try {
+      // Check if response is writable
+      if (client.res.writableEnded || client.res.destroyed) {
+        deadClients.push(client.id);
+        return;
+      }
+
+      // Check if connection is too old (should have been handled by timeout, but double-check)
+      const connectionAge = now - client.connectedAt.getTime();
+      if (connectionAge > MAX_CONNECTION_DURATION) {
+        logger.warn(`SSE client ${client.id} exceeded max duration (${connectionAge}ms), force closing`);
+        deadClients.push(client.id);
+      }
+    } catch (error) {
+      // If we can't check the client, it's probably dead
+      deadClients.push(client.id);
+    }
+  });
+
+  // Remove dead clients
+  if (deadClients.length > 0) {
+    deadClients.forEach((clientId) => {
+      const index = connectedClients.findIndex((c) => c.id === clientId);
+      if (index !== -1) {
+        const client = connectedClients[index];
+
+        // Cleanup intervals/timeouts
+        if (client.heartbeatInterval) {
+          clearInterval(client.heartbeatInterval);
+        }
+        if (client.maxDurationTimeout) {
+          clearTimeout(client.maxDurationTimeout);
+        }
+
+        // Try to end response
+        try {
+          if (!client.res.writableEnded) {
+            client.res.end();
+          }
+        } catch (error) {
+          // Ignore
+        }
+
+        connectedClients.splice(index, 1);
+      }
+    });
+
+    logger.info(`Cleaned up ${deadClients.length} dead SSE connection(s). Active: ${connectedClients.length}`);
+  }
+}, CLEANUP_INTERVAL);

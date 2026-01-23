@@ -16,6 +16,7 @@ import reservationRoutes from './routes/reservation.routes';
 import dayBlockRoutes from './routes/dayblock.routes';
 import userRoutes from './routes/user.routes';
 import notificationRoutes from './routes/notification.routes';
+import twoFactorRoutes from './routes/twoFactor.routes';
 import { sanitizeRequest } from './middleware/sanitize.middleware';
 
 // Load environment variables
@@ -43,10 +44,17 @@ app.use(
   })
 );
 
-// Rate limiting
+// Request size limits to prevent DoS attacks
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Cookie parser middleware
+app.use(cookieParser());
+
+// Rate limiting - increased for intensive dashboard usage
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  max: 1000, // Limit each IP to 1000 requests per windowMs (increased from 100 for legitimate usage)
   message: {
     error: {
       message: 'Too many requests from this IP, please try again after 15 minutes'
@@ -54,17 +62,16 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // Add handler to log rate limit blocks
+  handler: (req, res) => {
+    logger.warn(`⚠️ Rate limit exceeded for ${req.ip}: ${req.method} ${req.path}`);
+    res.status(429).json({
+      error: {
+        message: 'Too many requests from this IP, please try again after 15 minutes'
+      }
+    });
+  },
 });
-
-// Apply rate limiting to all API routes
-app.use('/api/', limiter);
-
-// Request size limits to prevent DoS attacks
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Cookie parser middleware
-app.use(cookieParser());
 
 // Error handler for malformed JSON
 app.use((error: any, req: Request, res: Response, next: NextFunction): void => {
@@ -90,14 +97,75 @@ app.use(
   })
 );
 
-// Request logging middleware
-app.use((req: Request, _res: Response, next: NextFunction) => {
-  logger.info(`${req.method} ${req.path}`);
+// Request timeout middleware (except for SSE)
+app.use((req: Request, res: Response, next: NextFunction) => {
+  // Skip timeout for SSE connections
+  if (req.path === '/api/notifications/stream') {
+    return next();
+  }
+
+  // Set timeout for regular requests (30 seconds)
+  const timeoutId = setTimeout(() => {
+    if (!res.headersSent) {
+      logger.error(`⏱️ Request timeout (30s): ${req.method} ${req.path}`, {
+        headers: req.headers,
+        query: req.query,
+        body: req.method !== 'GET' ? req.body : undefined
+      });
+      res.status(408).json({
+        error: { message: 'Request timeout - operation took too long' }
+      });
+    } else {
+      logger.warn(`⏱️ Request timeout (30s) but headers already sent: ${req.method} ${req.path}`);
+    }
+  }, 30000);
+
+  // Clear timeout when response finishes or closes
+  const clearTimeoutHandler = () => {
+    clearTimeout(timeoutId);
+  };
+
+  res.on('finish', clearTimeoutHandler);
+  res.on('close', clearTimeoutHandler);
+
+  next();
+});
+
+// Request logging middleware with response completion tracking
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const startTime = Date.now();
+  const requestId = Math.random().toString(36).substring(7);
+
+  logger.info(`[${requestId}] → ${req.method} ${req.originalUrl || req.url}`, {
+    ip: req.ip,
+    userAgent: req.get('user-agent')?.substring(0, 50)
+  });
+
+  // Track when response finishes
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    logger.info(`[${requestId}] ← ${req.method} ${req.originalUrl || req.url} ${res.statusCode} (${duration}ms)`, {
+      duration,
+      status: res.statusCode
+    });
+  });
+
+  // Track if response closes without finishing (connection error)
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      const duration = Date.now() - startTime;
+      logger.warn(`[${requestId}] ✖ ${req.method} ${req.originalUrl || req.url} - Connection closed before response finished (${duration}ms)`);
+    }
+  });
+
   next();
 });
 
 // Input sanitization middleware
 app.use(sanitizeRequest);
+
+// Apply rate limiting to all API routes (after logging to see blocked requests)
+app.use('/api/', limiter);
 
 // Routes
 app.use('/', healthRoutes);
@@ -109,6 +177,7 @@ app.use('/api/reservations', reservationRoutes);
 app.use('/api/day-blocks', dayBlockRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/2fa', twoFactorRoutes);
 app.use('/api/public', publicRoutes);
 
 // 404 handler

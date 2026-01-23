@@ -101,7 +101,7 @@ export function validateEnv(): void {
         } else {
           logger.info('GCS_CREDENTIALS validated successfully');
         }
-      } catch (error) {
+      } catch {
         logger.error('GCS_CREDENTIALS is not valid JSON. File uploads will fail.');
       }
     }

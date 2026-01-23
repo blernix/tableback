@@ -8,6 +8,12 @@ export interface IUser extends Document {
   restaurantId?: mongoose.Types.ObjectId;
   status: 'active' | 'inactive';
   mustChangePassword: boolean;
+  // Two-factor authentication
+  twoFactorEnabled: boolean;
+  twoFactorSecret?: string;
+  twoFactorRecoveryCodes?: string[];
+  twoFactorRecoveryIv?: string;
+  twoFactorRecoveryAuthTag?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -46,6 +52,27 @@ const userSchema = new Schema<IUser>(
     mustChangePassword: {
       type: Boolean,
       default: false,
+    },
+    // Two-factor authentication
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    twoFactorSecret: {
+      type: String,
+      default: null,
+    },
+    twoFactorRecoveryCodes: {
+      type: [String],
+      default: [],
+    },
+    twoFactorRecoveryIv: {
+      type: String,
+      default: null,
+    },
+    twoFactorRecoveryAuthTag: {
+      type: String,
+      default: null,
     },
   },
   {

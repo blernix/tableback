@@ -25,6 +25,9 @@ router.delete('/users/:userId', adminController.deleteUser);
 // Admin dashboard
 router.get('/dashboard', adminController.getAdminDashboard);
 
+// Restaurant monitoring
+router.get('/monitoring', adminController.getRestaurantMonitoring);
+
 // Restaurant analytics
 router.get('/restaurants/:id/analytics', adminController.getRestaurantAnalytics);
 
