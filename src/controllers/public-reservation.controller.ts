@@ -646,3 +646,79 @@ export const cancelReservation = async (req: Request, res: Response): Promise<vo
     res.status(500).json({ error: { message: 'Failed to cancel reservation' } });
   }
 };
+
+// Get upcoming closures (DayBlocks and Closures) for the next N days
+export const getUpcomingClosures = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const restaurant = req.restaurant!;
+    const days = parseInt(req.query.days as string) || 30; // Default to 30 days
+
+    // Limit to maximum 90 days to prevent abuse
+    const maxDays = Math.min(days, 90);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const endDate = new Date(today);
+    endDate.setDate(endDate.getDate() + maxDays);
+
+    // Fetch all DayBlocks within the range
+    const dayBlocks = await DayBlock.find({
+      restaurantId: restaurant._id,
+      date: {
+        $gte: today,
+        $lte: endDate,
+      },
+    })
+      .sort({ date: 1 })
+      .select('date reason');
+
+    // Fetch all Closures that overlap with the range
+    const closures = await Closure.find({
+      restaurantId: restaurant._id,
+      $or: [
+        // Closure starts within range
+        {
+          startDate: { $gte: today, $lte: endDate },
+        },
+        // Closure ends within range
+        {
+          endDate: { $gte: today, $lte: endDate },
+        },
+        // Closure spans the entire range
+        {
+          startDate: { $lte: today },
+          endDate: { $gte: endDate },
+        },
+      ],
+    })
+      .sort({ startDate: 1 })
+      .select('startDate endDate reason');
+
+    // Format the response
+    const upcomingClosures = [
+      // Add DayBlocks
+      ...dayBlocks.map(block => ({
+        type: 'dayblock' as const,
+        date: block.date.toISOString().split('T')[0],
+        message: block.reason || 'Jour bloqué',
+      })),
+      // Add Closures
+      ...closures.map(closure => ({
+        type: 'closure' as const,
+        startDate: closure.startDate.toISOString().split('T')[0],
+        endDate: closure.endDate.toISOString().split('T')[0],
+        message: closure.reason || 'Fermeture exceptionnelle',
+      })),
+    ];
+
+    res.json({
+      closures: upcomingClosures,
+    });
+
+    logger.info(`Upcoming closures fetched for restaurant: ${restaurant.name} (${maxDays} days)`);
+  } catch (error) {
+    logger.error('Error getting upcoming closures:', error);
+    res.status(500).json({ error: { message: 'Failed to get upcoming closures' } });
+  }
+};

@@ -12,6 +12,8 @@ type PublicDish = {
   price: number;
   allergens: string[];
   photoUrl?: string;
+  hasVariations?: boolean;
+  variations?: Array<{ name: string; price: number }>;
 };
 
 // Get menu by API key (public endpoint)
@@ -53,7 +55,7 @@ export const getMenuByApiKey = async (req: Request, res: Response): Promise<void
         restaurantId: restaurant._id,
         available: true,
       })
-        .select('name description price allergens photoUrl categoryId')
+        .select('name description price allergens photoUrl categoryId hasVariations variations')
         .lean();
 
       // Group dishes by category
@@ -69,6 +71,8 @@ export const getMenuByApiKey = async (req: Request, res: Response): Promise<void
           price: dish.price,
           allergens: dish.allergens,
           photoUrl: dish.photoUrl,
+          hasVariations: dish.hasVariations,
+          variations: dish.variations,
         });
         return acc;
       }, {} as Record<string, PublicDish[]>);
@@ -101,7 +105,7 @@ export const getMenuByApiKey = async (req: Request, res: Response): Promise<void
         restaurantId: restaurant._id,
         available: true,
       })
-        .select('name description price allergens photoUrl categoryId')
+        .select('name description price allergens photoUrl categoryId hasVariations variations')
         .lean();
 
       // Group dishes by category
@@ -117,6 +121,8 @@ export const getMenuByApiKey = async (req: Request, res: Response): Promise<void
           price: dish.price,
           allergens: dish.allergens,
           photoUrl: dish.photoUrl,
+          hasVariations: dish.hasVariations,
+          variations: dish.variations,
         });
         return acc;
       }, {} as Record<string, PublicDish[]>);

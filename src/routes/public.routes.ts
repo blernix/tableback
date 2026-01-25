@@ -18,6 +18,7 @@ router.post('/reservations', verifyApiKey, publicReservationController.createPub
 router.get('/availability/:date', verifyApiKey, publicReservationController.checkAvailability);
 router.get('/time-slots/:date', verifyApiKey, publicReservationController.getAvailableTimeSlots);
 router.get('/restaurant-info', verifyApiKey, publicReservationController.getRestaurantInfo);
+router.get('/upcoming-closures', verifyApiKey, publicReservationController.getUpcomingClosures);
 
 // Cancel reservation via email link (public - no API key required)
 router.get('/reservations/cancel', publicReservationController.cancelReservation);
