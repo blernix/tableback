@@ -564,6 +564,9 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
     const categoriesCount = await MenuCategory.countDocuments({ restaurantId });
     const dishesCount = await Dish.countDocuments({ restaurantId });
 
+    // Reservation quota info (for Starter plan)
+    const quotaInfo = restaurant ? restaurant.getReservationQuotaInfo() : null;
+
     res.json({
       today: {
         reservations: todayReservations.length,
@@ -587,6 +590,7 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
         categories: categoriesCount,
         dishes: dishesCount,
       },
+      quota: quotaInfo,
     });
   } catch (error) {
     logger.error('Error fetching dashboard stats:', error);
@@ -721,5 +725,181 @@ export const generateMenuQrCode = async (req: Request, res: Response): Promise<v
   } catch (error) {
     logger.error('Error generating menu QR code:', error);
     res.status(500).json({ error: { message: 'Failed to generate QR code' } });
+  }
+};
+
+// Update widget configuration (Pro plan only)
+const updateWidgetConfigSchema = z.object({
+  // Form colors
+  primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color').optional(),
+  secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color').optional(),
+  fontFamily: z.string().min(1).max(100).optional(),
+  borderRadius: z.string().regex(/^\d+px$/, 'Invalid border radius (must be in px)').optional(),
+  // Button specific colors
+  buttonBackgroundColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color').optional(),
+  buttonTextColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color').optional(),
+  buttonHoverColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/, 'Invalid hex color').optional(),
+  // Floating button general configs
+  buttonText: z.string().min(1).max(50).optional(),
+   buttonPosition: z.enum(['bottom-right', 'bottom-left', 'top-right', 'top-left']).optional(),
+  buttonStyle: z.enum(['round', 'square', 'minimal']).optional(),
+  buttonIcon: z.boolean().optional(),
+  modalWidth: z.string().regex(/^\d+(px|%)$/, 'Invalid width (must be px or %)').optional(),
+  modalHeight: z.string().regex(/^\d+(px|%)$/, 'Invalid height (must be px or %)').optional(),
+});
+
+export const updateWidgetConfig = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // DEBUG: Log request details
+    console.log('[DEBUG] === updateWidgetConfig called ===');
+    console.log('[DEBUG] Request body:', JSON.stringify(req.body, null, 2));
+    console.log('[DEBUG] buttonIcon type:', typeof req.body.buttonIcon);
+    console.log('[DEBUG] buttonIcon value:', req.body.buttonIcon);
+    
+    // Log all boolean-like fields
+    Object.keys(req.body).forEach(key => {
+      const value = req.body[key];
+      if (typeof value === 'boolean' || value === 'true' || value === 'false' || typeof value === 'string' && (value.toLowerCase() === 'true' || value.toLowerCase() === 'false')) {
+        console.log(`[DEBUG] ${key}:`, { type: typeof value, value: value });
+      }
+    });
+    
+    console.log('[DEBUG] Content-Type header:', req.headers['content-type']);
+    
+    if (!req.user?.restaurantId) {
+      res.status(400).json({ error: { message: 'User not associated with a restaurant' } });
+      return;
+    }
+
+    const restaurant = await Restaurant.findById(req.user.restaurantId);
+
+    if (!restaurant) {
+      res.status(404).json({ error: { message: 'Restaurant not found' } });
+      return;
+    }
+
+    // Check account type and plan
+    if (restaurant.accountType === 'self-service') {
+      // Self-service accounts need Pro plan
+      if (restaurant.subscription?.plan !== 'pro') {
+        res.status(403).json({
+          error: { message: 'Widget customization is only available for Pro plan subscribers' }
+        });
+        return;
+      }
+    } else if (restaurant.accountType === 'managed') {
+      // Managed accounts have full access
+      // No plan check needed
+    } else {
+      // Other account types not allowed
+      res.status(403).json({
+        error: { message: 'Widget customization is not available for this account type' }
+      });
+      return;
+    }
+
+    // Validate request body
+    const validatedData = updateWidgetConfigSchema.parse(req.body);
+
+    // Update widget config
+    if (!restaurant.widgetConfig) {
+      restaurant.widgetConfig = {};
+    }
+
+    // Form colors (affecte le formulaire)
+    if (validatedData.primaryColor !== undefined) {
+      restaurant.widgetConfig.primaryColor = validatedData.primaryColor;
+    }
+    if (validatedData.secondaryColor !== undefined) {
+      restaurant.widgetConfig.secondaryColor = validatedData.secondaryColor;
+    }
+    if (validatedData.fontFamily !== undefined) {
+      restaurant.widgetConfig.fontFamily = validatedData.fontFamily;
+    }
+    if (validatedData.borderRadius !== undefined) {
+      restaurant.widgetConfig.borderRadius = validatedData.borderRadius;
+    }
+    
+    // Button specific colors (bouton flottant uniquement) - INITIALISATION SI MANQUANT
+    if (validatedData.buttonBackgroundColor !== undefined) {
+      restaurant.widgetConfig.buttonBackgroundColor = validatedData.buttonBackgroundColor;
+    } else if (!restaurant.widgetConfig.buttonBackgroundColor) {
+      // Initialiser avec la primaryColor par défaut si pas défini
+      restaurant.widgetConfig.buttonBackgroundColor = restaurant.widgetConfig.primaryColor || '#0066FF';
+    }
+    
+    if (validatedData.buttonTextColor !== undefined) {
+      restaurant.widgetConfig.buttonTextColor = validatedData.buttonTextColor;
+    } else if (!restaurant.widgetConfig.buttonTextColor) {
+      // Initialiser avec blanc par défaut si pas défini
+      restaurant.widgetConfig.buttonTextColor = '#FFFFFF';
+    }
+    
+    if (validatedData.buttonHoverColor !== undefined) {
+      restaurant.widgetConfig.buttonHoverColor = validatedData.buttonHoverColor;
+    } else if (!restaurant.widgetConfig.buttonHoverColor) {
+      // Initialiser avec une couleur plus foncée par défaut
+      restaurant.widgetConfig.buttonHoverColor = '#0052EB';
+    }
+    
+    // Floating button general configs
+    if (validatedData.buttonText !== undefined) {
+      restaurant.widgetConfig.buttonText = validatedData.buttonText;
+    } else if (!restaurant.widgetConfig.buttonText) {
+      restaurant.widgetConfig.buttonText = 'Réserver une table';
+    }
+    
+    if (validatedData.buttonPosition !== undefined) {
+      restaurant.widgetConfig.buttonPosition = validatedData.buttonPosition;
+    } else if (!restaurant.widgetConfig.buttonPosition) {
+      restaurant.widgetConfig.buttonPosition = 'bottom-right';
+    }
+    
+    if (validatedData.buttonStyle !== undefined) {
+      restaurant.widgetConfig.buttonStyle = validatedData.buttonStyle;
+    } else if (!restaurant.widgetConfig.buttonStyle) {
+      restaurant.widgetConfig.buttonStyle = 'round';
+    }
+    
+    if (validatedData.buttonIcon !== undefined) {
+      restaurant.widgetConfig.buttonIcon = validatedData.buttonIcon;
+    } else if (restaurant.widgetConfig.buttonIcon === undefined) {
+      restaurant.widgetConfig.buttonIcon = false;
+    }
+    
+    if (validatedData.modalWidth !== undefined) {
+      restaurant.widgetConfig.modalWidth = validatedData.modalWidth;
+    } else if (!restaurant.widgetConfig.modalWidth) {
+      restaurant.widgetConfig.modalWidth = '500px';
+    }
+    
+    if (validatedData.modalHeight !== undefined) {
+      restaurant.widgetConfig.modalHeight = validatedData.modalHeight;
+    } else if (!restaurant.widgetConfig.modalHeight) {
+      restaurant.widgetConfig.modalHeight = '600px';
+    }
+
+    await restaurant.save();
+
+    logger.info(`Widget config updated for restaurant: ${restaurant.name} (ID: ${restaurant._id})`);
+
+    res.status(200).json({
+      message: 'Widget configuration updated successfully',
+      widgetConfig: restaurant.widgetConfig,
+      restaurant
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        error: {
+          message: 'Validation error',
+          details: error.errors
+        }
+      });
+      return;
+    }
+
+    logger.error('Error updating widget config:', error);
+    res.status(500).json({ error: { message: 'Failed to update widget configuration' } });
   }
 };

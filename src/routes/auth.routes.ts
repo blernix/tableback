@@ -103,8 +103,36 @@ const registerLimiter = rateLimit({
   },
 });
 
+// Rate limiter for self-service signup - Prevent abuse
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 3, // 3 signups per hour per IP (stricter than register)
+  message: {
+    error: {
+      message: 'Too many signup attempts. Please try again later.'
+    }
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    logger.warn(`🚨 Signup rate limit exceeded for IP ${req.ip}`, {
+      ip: req.ip,
+      email: req.body?.ownerEmail,
+      restaurantName: req.body?.restaurantName,
+    });
+    res.status(429).json({
+      error: {
+        message: 'Too many signup attempts. Please try again later.'
+      }
+    });
+  },
+});
+
 // POST /api/auth/register - Register new user (admin only, rate limited)
 router.post('/register', registerLimiter, authenticateToken, authorizeRole(['admin']), authController.register);
+
+// POST /api/auth/signup - Self-service signup (public, rate limited)
+router.post('/signup', signupLimiter, authController.signup);
 
 // POST /api/auth/login - Login user (rate limited)
 router.post('/login', loginLimiter, authController.login);

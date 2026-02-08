@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{headerTitle}} - TableMaster</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-weight: 300; background-color: #FAFAFA; color: #2A2A2A;">
+  <!-- Swiss Clean Email Template - TableMaster -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #FAFAFA; min-height: 100vh;">
+    <tr>
+      <td align="center" style="padding: 60px 20px;">
+        <!-- Main Content Container -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #FFFFFF; border: 1px solid #E5E5E5;">
+          
+          <!-- Header -->
+          <tr>
+            <td style="padding: 40px 30px 30px; border-bottom: 1px solid #E5E5E5; border-top: 4px solid {{headerColor}};">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 24px; font-weight: 400; color: #0066FF; letter-spacing: -0.5px; margin-bottom: 8px;">
+                      TableMaster
+                    </div>
+                    <div style="font-size: 32px; margin: 20px 0; color: {{headerColor}};">
+                      •
+                    </div>
+                    <div style="font-size: 20px; font-weight: 400; color: #2A2A2A; margin-top: 16px;">
+                      {{headerTitle}}
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Greeting -->
+          <tr>
+            <td style="padding: 30px 30px 0;">
+              <p style="margin: 0 0 20px 0; font-size: 16px; line-height: 1.6; color: #2A2A2A;">
+                Bonjour <strong style="font-weight: 400;">{{restaurantName}}</strong>,
+              </p>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 20px 30px;">
+              <!-- Alert Message -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; background-color: {{alertBg}}; border-left: 2px solid {{alertBorder}};">
+                <tr>
+                  <td style="padding: 20px;">
+                    <div style="font-size: 15px; color: {{alertColor}}; line-height: 1.6;">
+                      {{message}}
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Usage Statistics -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; border: 1px solid #E5E5E5;">
+                <tr>
+                  <td style="padding: 24px;">
+                    <div style="font-size: 16px; font-weight: 400; color: #2A2A2A; margin-bottom: 16px;">
+                      Utilisation actuelle
+                    </div>
+                    
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px solid #FAFAFA;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="160" style="color: #666666; font-size: 14px;">
+                                Réservations utilisées
+                              </td>
+                              <td style="color: #2A2A2A; font-size: 14px; font-weight: 400; text-align: right;">
+                                {{current}} / {{limit}}
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td style="padding: 8px 0; border-bottom: 1px solid #FAFAFA;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="160" style="color: #666666; font-size: 14px;">
+                                Restantes
+                              </td>
+                              <td style="color: #2A2A2A; font-size: 14px; font-weight: 400; text-align: right;">
+                                {{remaining}}
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="160" style="color: #666666; font-size: 14px;">
+                                Pourcentage
+                              </td>
+                              <td style="color: #2A2A2A; font-size: 14px; font-weight: 400; text-align: right;">
+                                {{percentage}}%
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- CTA Section (HTML generated server-side) -->
+              {{ctaSection}}
+
+              <!-- Dashboard Link -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 32px;">
+                <tr>
+                  <td align="center" style="padding: 10px 0;">
+                    <a href="{{dashboardLink}}" style="display: inline-block; background-color: #0066FF; color: #FFFFFF; padding: 16px 40px; text-decoration: none; font-size: 15px; font-weight: 400; border: none;">
+                      Accéder au tableau de bord
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px; border-top: 1px solid #E5E5E5; background-color: #FAFAFA;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 14px; color: #666666; margin-bottom: 8px;">
+                      TableMaster
+                    </div>
+                    <div style="font-size: 12px; color: #999999; line-height: 1.5;">
+                      Votre solution de gestion de réservations
+                    </div>
+                    <div style="font-size: 11px; color: #999999; margin-top: 16px;">
+                      © 2026 TableMaster. Tous droits réservés.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

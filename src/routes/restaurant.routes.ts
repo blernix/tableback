@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as restaurantController from '../controllers/restaurant.controller';
+import * as slugManagementController from '../controllers/slug-management.controller';
 import { authenticateToken, authorizeRole } from '../middleware/auth.middleware';
 import { upload } from '../config/storage.config';
 import rateLimit from 'express-rate-limit';
@@ -36,6 +37,12 @@ router.delete('/logo', authorizeRole(['restaurant']), restaurantController.delet
 router.post('/menu/pdf', authorizeRole(['restaurant']), uploadLimiter, upload.single('pdf'), restaurantController.uploadMenuPdf);
 router.put('/menu/mode', authorizeRole(['restaurant']), restaurantController.switchMenuMode);
 router.post('/menu/qrcode/generate', authorizeRole(['restaurant']), restaurantController.generateMenuQrCode);
+
+// Widget Configuration - only accessible to restaurant role (Pro plan self-service)
+router.put('/widget-config', authorizeRole(['restaurant']), restaurantController.updateWidgetConfig);
+
+// Slug Configuration - only accessible to restaurant role (Pro plan only)
+router.put('/slug', authorizeRole(['restaurant']), slugManagementController.updateRestaurantSlug);
 
 // Tables Configuration - only accessible to restaurant role
 router.put('/tables-config', authorizeRole(['restaurant']), restaurantController.updateTablesConfig);

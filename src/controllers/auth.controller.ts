@@ -2,12 +2,15 @@ import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import User from '../models/User.model';
+import Restaurant from '../models/Restaurant.model';
 import { generateToken } from '../utils/jwt';
 import logger from '../utils/logger';
 import { z } from 'zod';
 import { sendPasswordResetEmail } from '../services/emailService';
 import { validatePasswordResetToken } from '../services/tokenService';
 import { generateTempToken } from '../utils/tempToken';
+import { createCheckoutSession } from '../services/stripe.service';
+import { generateShortCode } from '../utils/slugGenerator';
 
 // Validation schemas
 const registerSchema = z.object({
@@ -312,7 +315,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
         restaurantId?: string;
         exp?: number;
       };
-    } catch (_error) {
+    } catch {
       res.status(401).json({ error: { message: 'Invalid token' } });
       return;
     }
@@ -547,5 +550,139 @@ export const changeEmail = async (req: Request, res: Response): Promise<void> =>
 
     logger.error('Change email error:', error);
     res.status(500).json({ error: { message: 'Failed to change email' } });
+  }
+};
+
+// Self-service signup (public endpoint)
+const signupSchema = z.object({
+  // Restaurant info
+  restaurantName: z.string().min(2, 'Restaurant name must be at least 2 characters'),
+  restaurantAddress: z.string().min(5, 'Address must be at least 5 characters'),
+  restaurantPhone: z.string().min(10, 'Phone must be at least 10 characters'),
+  restaurantEmail: z.string().email('Invalid restaurant email format'),
+
+  // Owner info
+  ownerEmail: z.string().email('Invalid email format'),
+  ownerPassword: z.string().min(6, 'Password must be at least 6 characters'),
+
+  // Plan selection
+  plan: z.enum(['starter', 'pro'], {
+    errorMap: () => ({ message: 'Plan must be either starter or pro' }),
+  }),
+});
+
+export const signup = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const validatedData = signupSchema.parse(req.body);
+
+    // Check if user already exists with this email
+    const existingUser = await User.findOne({ email: validatedData.ownerEmail });
+    if (existingUser) {
+      res.status(409).json({
+        error: { message: 'An account already exists with this email' }
+      });
+      return;
+    }
+
+    // Check if restaurant email already exists
+    const existingRestaurant = await Restaurant.findOne({
+      email: validatedData.restaurantEmail,
+    });
+    if (existingRestaurant) {
+      res.status(409).json({
+        error: { message: 'A restaurant already exists with this email' }
+      });
+      return;
+    }
+
+    // Create restaurant (self-service type, inactive until payment)
+    const restaurant = new Restaurant({
+      name: validatedData.restaurantName,
+      address: validatedData.restaurantAddress,
+      phone: validatedData.restaurantPhone,
+      email: validatedData.restaurantEmail,
+      accountType: 'self-service',
+      status: 'inactive', // Will be activated after successful payment
+      subscription: {
+        plan: validatedData.plan,
+      },
+      // Vanity URL system - generate short code for pretty URLs
+      publicSlug: generateShortCode(8), // e.g. "x7z9mq2p"
+      // Default opening hours (can be customized later)
+      openingHours: {
+        monday: { closed: false, slots: [] },
+        tuesday: { closed: false, slots: [] },
+        wednesday: { closed: false, slots: [] },
+        thursday: { closed: false, slots: [] },
+        friday: { closed: false, slots: [] },
+        saturday: { closed: false, slots: [] },
+        sunday: { closed: true, slots: [] },
+      },
+    });
+
+    await restaurant.save();
+
+    logger.info(`Self-service restaurant created: ${restaurant.name} (${restaurant._id})`);
+
+    // Create owner user
+    const owner = new User({
+      email: validatedData.ownerEmail,
+      password: validatedData.ownerPassword,
+      role: 'restaurant',
+      restaurantId: restaurant._id,
+      status: 'active',
+    });
+
+    await owner.save();
+
+    logger.info(`Owner user created: ${owner.email} for restaurant ${restaurant._id}`);
+
+    // Create Stripe Checkout Session
+    const checkoutSession = await createCheckoutSession({
+      restaurantId: restaurant._id.toString(),
+      plan: validatedData.plan,
+      email: validatedData.ownerEmail,
+      successUrl: `${process.env.FRONTEND_URL}/signup/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${process.env.FRONTEND_URL}/signup/cancel`,
+    });
+
+    logger.info(`Stripe checkout session created for restaurant ${restaurant._id}`, {
+      sessionId: checkoutSession.id,
+      plan: validatedData.plan,
+    });
+
+    // Return checkout URL
+    res.status(201).json({
+      message: 'Account created successfully. Please complete payment to activate.',
+      restaurant: {
+        id: restaurant._id,
+        name: restaurant.name,
+        email: restaurant.email,
+        accountType: restaurant.accountType,
+      },
+      owner: {
+        id: owner._id,
+        email: owner.email,
+      },
+      checkout: {
+        sessionId: checkoutSession.id,
+        url: checkoutSession.url,
+      },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        error: {
+          message: 'Validation error',
+          details: error.errors,
+        },
+      });
+      return;
+    }
+
+    logger.error('Signup error:', error);
+    res.status(500).json({
+      error: { message: 'Failed to create account. Please try again.' }
+    });
   }
 };

@@ -4,6 +4,13 @@ import Restaurant from '../models/Restaurant.model';
 import User from '../models/User.model';
 import Reservation from '../models/Reservation.model';
 import NotificationAnalytics from '../models/NotificationAnalytics.model';
+import MenuCategory from '../models/MenuCategory.model';
+import Dish from '../models/Dish.model';
+import DayBlock from '../models/DayBlock.model';
+import Closure from '../models/Closure.model';
+import PushSubscription from '../models/PushSubscription.model';
+import NotificationPreferences from '../models/NotificationPreferences.model';
+import SubscriptionHistory from '../models/SubscriptionHistory.model';
 import logger from '../utils/logger';
 import { z } from 'zod';
 import { getRestaurantNotificationAnalytics, getNotificationDeliveryRate } from '../services/notificationAnalyticsService';
@@ -161,14 +168,67 @@ export const deleteRestaurant = async (req: Request, res: Response): Promise<voi
   try {
     const { id } = req.params;
 
-    const restaurant = await Restaurant.findByIdAndDelete(id);
+    // Check if restaurant exists first
+    const restaurant = await Restaurant.findById(id);
 
     if (!restaurant) {
       res.status(404).json({ error: { message: 'Restaurant not found' } });
       return;
     }
 
-    logger.info(`Restaurant deleted: ${restaurant.name} (ID: ${restaurant._id})`);
+    const restaurantName = restaurant.name;
+    const restaurantId = restaurant._id;
+
+    logger.info(`Starting deletion of restaurant: ${restaurantName} (ID: ${restaurantId})`);
+
+    // Delete all associated data in parallel for better performance
+    const deletionPromises = [
+      // Delete all users associated with this restaurant
+      User.deleteMany({ restaurantId: restaurantId }),
+
+      // Delete all reservations
+      Reservation.deleteMany({ restaurantId: restaurantId }),
+
+      // Delete all menu categories and dishes
+      MenuCategory.deleteMany({ restaurantId: restaurantId }),
+      Dish.deleteMany({ restaurantId: restaurantId }),
+
+      // Delete all day blocks and closures
+      DayBlock.deleteMany({ restaurantId: restaurantId }),
+      Closure.deleteMany({ restaurantId: restaurantId }),
+
+      // Delete all push subscriptions
+      PushSubscription.deleteMany({ restaurantId: restaurantId }),
+
+      // Delete notification preferences and analytics
+      NotificationPreferences.deleteMany({ restaurantId: restaurantId }),
+      NotificationAnalytics.deleteMany({ restaurantId: restaurantId }),
+
+      // Delete subscription history
+      SubscriptionHistory.deleteMany({ restaurantId: restaurantId }),
+    ];
+
+    // Execute all deletions in parallel
+    const results = await Promise.all(deletionPromises);
+
+    // Log deletion counts
+    logger.info(`Deleted associated data for restaurant ${restaurantName}:`, {
+      users: results[0].deletedCount,
+      reservations: results[1].deletedCount,
+      menuCategories: results[2].deletedCount,
+      dishes: results[3].deletedCount,
+      dayBlocks: results[4].deletedCount,
+      closures: results[5].deletedCount,
+      pushSubscriptions: results[6].deletedCount,
+      notificationPreferences: results[7].deletedCount,
+      notificationAnalytics: results[8].deletedCount,
+      subscriptionHistory: results[9].deletedCount,
+    });
+
+    // Finally, delete the restaurant itself
+    await Restaurant.findByIdAndDelete(id);
+
+    logger.info(`Restaurant and all associated data deleted successfully: ${restaurantName} (ID: ${restaurantId})`);
 
     res.status(204).send();
   } catch (error) {
@@ -392,6 +452,73 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
     const activeRestaurants = restaurantStats.find(s => s._id === 'active')?.count || 0;
     const inactiveRestaurants = restaurantStats.find(s => s._id === 'inactive')?.count || 0;
 
+    // Count restaurants by account type (manual vs self-service)
+    const accountTypeStats = await Restaurant.aggregate([
+      {
+        $group: {
+          _id: '$accountType',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const managedRestaurants = accountTypeStats.find(s => s._id === 'managed')?.count || 0;
+    const selfServiceRestaurants = accountTypeStats.find(s => s._id === 'self-service')?.count || 0;
+
+    // Count self-service restaurants by subscription plan
+    const subscriptionPlanStats = await Restaurant.aggregate([
+      {
+        $match: {
+          accountType: 'self-service'
+        }
+      },
+      {
+        $group: {
+          _id: '$subscription.plan',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const starterPlanCount = subscriptionPlanStats.find(s => s._id === 'starter')?.count || 0;
+    const proPlanCount = subscriptionPlanStats.find(s => s._id === 'pro')?.count || 0;
+
+    // Count by subscription status
+    const subscriptionStatusStats = await Restaurant.aggregate([
+      {
+        $match: {
+          accountType: 'self-service'
+        }
+      },
+      {
+        $group: {
+          _id: '$subscription.status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const activeSubscriptions = subscriptionStatusStats.find(s => s._id === 'active')?.count || 0;
+    const trialSubscriptions = subscriptionStatusStats.find(s => s._id === 'trial')?.count || 0;
+    const pastDueSubscriptions = subscriptionStatusStats.find(s => s._id === 'past_due')?.count || 0;
+    const cancelledSubscriptions = subscriptionStatusStats.find(s => s._id === 'cancelled')?.count || 0;
+
+    // Calculate MRR (Monthly Recurring Revenue)
+    // Only count active subscriptions
+    const activeStarterRestaurants = await Restaurant.countDocuments({
+      accountType: 'self-service',
+      'subscription.plan': 'starter',
+      'subscription.status': 'active'
+    });
+
+    const activeProRestaurants = await Restaurant.countDocuments({
+      accountType: 'self-service',
+      'subscription.plan': 'pro',
+      'subscription.status': 'active'
+    });
+
+    const mrr = (activeStarterRestaurants * 39) + (activeProRestaurants * 69);
+
     // Optimize: Count users by role in a single aggregation
     const userStats = await User.aggregate([
       {
@@ -405,24 +532,39 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
     const adminUsers = userStats.find(s => s._id === 'admin')?.count || 0;
     const restaurantUsers = userStats.find(s => s._id === 'restaurant')?.count || 0;
     const serverUsers = userStats.find(s => s._id === 'server')?.count || 0;
-    
+
     // Recent reservations (last 7 days)
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    
+
     const recentReservations = await Reservation.countDocuments({
       createdAt: { $gte: oneWeekAgo },
       status: { $nin: ['cancelled'] }
     });
-    
+
+    // Total reservations (all time, excluding cancelled)
+    const totalReservations = await Reservation.countDocuments({
+      status: { $nin: ['cancelled'] }
+    });
+
+    // Reservations this month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    const monthlyReservations = await Reservation.countDocuments({
+      createdAt: { $gte: startOfMonth, $lte: endOfMonth },
+      status: { $nin: ['cancelled'] }
+    });
+
     // Recent restaurants (last 30 days)
     const oneMonthAgo = new Date();
     oneMonthAgo.setDate(oneMonthAgo.getDate() - 30);
-    
+
     const recentRestaurants = await Restaurant.countDocuments({
       createdAt: { $gte: oneMonthAgo }
     });
-    
+
     // Top 5 restaurants by reservation count (last 30 days)
     const topRestaurants = await Reservation.aggregate([
       {
@@ -459,18 +601,64 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
           restaurantId: '$_id',
           restaurantName: '$restaurant.name',
           reservationCount: 1,
+          accountType: '$restaurant.accountType',
+          subscriptionPlan: '$restaurant.subscription.plan',
           _id: 0
         }
       }
     ]);
-    
+
+    // Get quota usage for Starter plan restaurants
+    const starterRestaurants = await Restaurant.find({
+      accountType: 'self-service',
+      'subscription.plan': 'starter',
+      'subscription.status': 'active'
+    }).select('name reservationQuota');
+
+    const quotaUsage = starterRestaurants.map(r => ({
+      restaurantName: r.name,
+      current: r.reservationQuota?.monthlyCount || 0,
+      limit: r.reservationQuota?.limit || 50,
+      percentage: r.getReservationQuotaInfo().percentage
+    }));
+
+    const averageQuotaUsage = quotaUsage.length > 0
+      ? Math.round(quotaUsage.reduce((sum, q) => sum + q.percentage, 0) / quotaUsage.length)
+      : 0;
+
     res.status(200).json({
       stats: {
         restaurants: {
           total: activeRestaurants + inactiveRestaurants,
           active: activeRestaurants,
           inactive: inactiveRestaurants,
-          recent: recentRestaurants
+          recent: recentRestaurants,
+          byAccountType: {
+            managed: managedRestaurants,
+            selfService: selfServiceRestaurants
+          }
+        },
+        subscriptions: {
+          byPlan: {
+            starter: starterPlanCount,
+            pro: proPlanCount
+          },
+          byStatus: {
+            active: activeSubscriptions,
+            trial: trialSubscriptions,
+            pastDue: pastDueSubscriptions,
+            cancelled: cancelledSubscriptions
+          },
+          activeSubscriptions: activeStarterRestaurants + activeProRestaurants
+        },
+        revenue: {
+          mrr: mrr,
+          breakdown: {
+            starter: activeStarterRestaurants * 39,
+            pro: activeProRestaurants * 69
+          },
+          activeStarterCount: activeStarterRestaurants,
+          activeProCount: activeProRestaurants
         },
         users: {
           total: adminUsers + restaurantUsers + serverUsers,
@@ -479,7 +667,10 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
           server: serverUsers
         },
         reservations: {
-          recent: recentReservations
+          total: totalReservations,
+          thisMonth: monthlyReservations,
+          recent: recentReservations,
+          averageQuotaUsage: averageQuotaUsage
         },
         topRestaurants
       }
@@ -1224,5 +1415,272 @@ export const getRestaurantMonitoring = async (_req: Request, res: Response): Pro
   } catch (error) {
     logger.error('Error fetching restaurant monitoring data:', error);
     res.status(500).json({ error: { message: 'Failed to fetch monitoring data' } });
+  }
+};
+
+// Reset monthly reservation quotas for all restaurants
+export const resetMonthlyQuotas = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    logger.info('Starting monthly quota reset for all restaurants');
+
+    // Find all self-service Starter plan restaurants
+    const restaurants = await Restaurant.find({
+      accountType: 'self-service',
+      'subscription.plan': 'starter',
+    });
+
+    let resetCount = 0;
+    const errors: string[] = [];
+
+    for (const restaurant of restaurants) {
+      try {
+        await restaurant.resetMonthlyReservationCount();
+        resetCount++;
+        logger.info(`Reset quota for restaurant: ${restaurant.name} (ID: ${restaurant._id})`);
+      } catch (error) {
+        const errorMsg = `Failed to reset quota for ${restaurant.name}: ${error}`;
+        logger.error(errorMsg);
+        errors.push(errorMsg);
+      }
+    }
+
+    logger.info(`Monthly quota reset completed. Success: ${resetCount}, Errors: ${errors.length}`);
+
+    res.status(200).json({
+      message: 'Monthly quota reset completed',
+      summary: {
+        totalRestaurants: restaurants.length,
+        successfulResets: resetCount,
+        errors: errors.length,
+      },
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (error) {
+    logger.error('Error resetting monthly quotas:', error);
+    res.status(500).json({ error: { message: 'Failed to reset monthly quotas' } });
+  }
+};
+
+// Manage restaurant subscription manually (admin only)
+export const manageSubscription = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { action, plan, days } = req.body;
+
+    // Validate action
+    const validActions = ['change_plan', 'extend_subscription', 'activate', 'cancel'];
+    if (!action || !validActions.includes(action)) {
+      res.status(400).json({
+        error: { message: `Action must be one of: ${validActions.join(', ')}` }
+      });
+      return;
+    }
+
+    // Find restaurant
+    const restaurant = await Restaurant.findById(id);
+    if (!restaurant) {
+      res.status(404).json({ error: { message: 'Restaurant not found' } });
+      return;
+    }
+
+    // Only allow managing self-service accounts
+    if (restaurant.accountType !== 'self-service') {
+      res.status(400).json({
+        error: { message: 'Can only manage self-service accounts. Managed accounts do not have subscriptions.' }
+      });
+      return;
+    }
+
+    let message = '';
+
+    switch (action) {
+      case 'change_plan': {
+        // Validate plan
+        if (!plan || !['starter', 'pro'].includes(plan)) {
+          res.status(400).json({ error: { message: 'Plan must be "starter" or "pro"' } });
+          return;
+        }
+
+        // Don't allow changing to same plan
+        if (restaurant.subscription?.plan === plan) {
+          res.status(400).json({ error: { message: `Restaurant is already on ${plan} plan` } });
+          return;
+        }
+
+        // Initialize subscription if it doesn't exist
+        if (!restaurant.subscription) {
+          restaurant.subscription = {
+            plan: plan as 'starter' | 'pro',
+            status: 'active',
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+          };
+        } else {
+          restaurant.subscription.plan = plan as 'starter' | 'pro';
+        }
+
+        // Update quota based on plan
+        if (plan === 'pro') {
+          // Pro plan: unlimited reservations
+          if (!restaurant.reservationQuota) {
+            restaurant.reservationQuota = {
+              monthlyCount: 0,
+              lastResetDate: new Date(),
+              limit: -1, // unlimited
+              emailsSent: { at80: false, at90: false, at100: false },
+            };
+          } else {
+            restaurant.reservationQuota.limit = -1;
+          }
+          message = `Plan upgraded to Pro (unlimited reservations)`;
+        } else {
+          // Starter plan: 50 reservations/month
+          if (!restaurant.reservationQuota) {
+            restaurant.reservationQuota = {
+              monthlyCount: 0,
+              lastResetDate: new Date(),
+              limit: 50,
+              emailsSent: { at80: false, at90: false, at100: false },
+            };
+          } else {
+            restaurant.reservationQuota.limit = 50;
+          }
+          message = `Plan changed to Starter (50 reservations/month)`;
+        }
+
+        logger.info(`Admin changed plan for restaurant ${restaurant.name} (${id}) to ${plan}`);
+        break;
+      }
+
+      case 'extend_subscription': {
+        // Validate days
+        if (!days || typeof days !== 'number' || days < 1 || days > 365) {
+          res.status(400).json({ error: { message: 'Days must be a number between 1 and 365' } });
+          return;
+        }
+
+        // Initialize subscription if it doesn't exist
+        if (!restaurant.subscription) {
+          res.status(400).json({
+            error: { message: 'Restaurant has no subscription to extend. Use "activate" action first.' }
+          });
+          return;
+        }
+
+        // Extend from current end date or now (whichever is later)
+        const baseDate = restaurant.subscription.currentPeriodEnd
+          ? new Date(Math.max(new Date(restaurant.subscription.currentPeriodEnd).getTime(), Date.now()))
+          : new Date();
+
+        // Save previous end date for email
+        const previousEndDate = baseDate.toLocaleDateString('fr-FR', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+
+        const newEndDate = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+        restaurant.subscription.currentPeriodEnd = newEndDate;
+        restaurant.subscription.status = 'active';
+
+        const newEndDateFormatted = newEndDate.toLocaleDateString('fr-FR', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+
+        message = `Subscription extended by ${days} day(s). New end date: ${newEndDateFormatted}`;
+        logger.info(`Admin extended subscription for restaurant ${restaurant.name} (${id}) by ${days} days`);
+
+        // Send email notification to restaurant (async, don't block)
+        setImmediate(async () => {
+          try {
+            const { sendSubscriptionExtendedEmail } = await import('../services/emailService');
+            await sendSubscriptionExtendedEmail(
+              { name: restaurant.name, email: restaurant.email },
+              {
+                daysOffered: days,
+                previousEndDate,
+                newEndDate: newEndDateFormatted,
+              }
+            );
+            logger.info(`Subscription extended email sent to ${restaurant.email}`);
+          } catch (emailError) {
+            logger.error('Failed to send subscription extended email:', emailError);
+            // Don't fail the request if email fails
+          }
+        });
+
+        break;
+      }
+
+      case 'activate': {
+        // Validate plan if provided
+        const activatePlan = plan || restaurant.subscription?.plan || 'starter';
+        if (!['starter', 'pro'].includes(activatePlan)) {
+          res.status(400).json({ error: { message: 'Plan must be "starter" or "pro"' } });
+          return;
+        }
+
+        // Initialize or reactivate subscription
+        const startDate = new Date();
+        const endDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+        restaurant.subscription = {
+          plan: activatePlan as 'starter' | 'pro',
+          status: 'active',
+          currentPeriodStart: startDate,
+          currentPeriodEnd: endDate,
+        };
+
+        // Set quota based on plan
+        const limit = activatePlan === 'pro' ? -1 : 50;
+        restaurant.reservationQuota = {
+          monthlyCount: 0,
+          lastResetDate: new Date(),
+          limit,
+          emailsSent: { at80: false, at90: false, at100: false },
+        };
+
+        message = `Subscription activated with ${activatePlan} plan until ${endDate.toLocaleDateString('fr-FR')}`;
+        logger.info(`Admin activated subscription for restaurant ${restaurant.name} (${id}) on ${activatePlan} plan`);
+        break;
+      }
+
+      case 'cancel': {
+        if (!restaurant.subscription) {
+          res.status(400).json({ error: { message: 'Restaurant has no subscription to cancel' } });
+          return;
+        }
+
+        restaurant.subscription.status = 'cancelled';
+        restaurant.subscription.cancelAtPeriodEnd = true;
+
+        message = `Subscription cancelled. Will remain active until ${restaurant.subscription.currentPeriodEnd?.toLocaleDateString('fr-FR') || 'end of period'}`;
+        logger.info(`Admin cancelled subscription for restaurant ${restaurant.name} (${id})`);
+        break;
+      }
+    }
+
+    await restaurant.save();
+
+    res.status(200).json({
+      message,
+      subscription: {
+        plan: restaurant.subscription?.plan,
+        status: restaurant.subscription?.status,
+        currentPeriodStart: restaurant.subscription?.currentPeriodStart,
+        currentPeriodEnd: restaurant.subscription?.currentPeriodEnd,
+        cancelAtPeriodEnd: restaurant.subscription?.cancelAtPeriodEnd,
+      },
+      quota: restaurant.reservationQuota ? {
+        monthlyCount: restaurant.reservationQuota.monthlyCount,
+        limit: restaurant.reservationQuota.limit,
+        remaining: restaurant.getReservationQuotaInfo().remaining,
+      } : null
+    });
+  } catch (error) {
+    logger.error('Error managing subscription:', error);
+    res.status(500).json({ error: { message: 'Failed to manage subscription' } });
   }
 };

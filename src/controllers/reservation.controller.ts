@@ -53,18 +53,21 @@ export const getReservations = async (req: Request, res: Response): Promise<void
 
     interface ReservationFilter {
       restaurantId: Types.ObjectId;
-      date?: { $gte: Date; $lte: Date };
+      date?: { $gte?: Date; $lte?: Date };
       status?: string;
     }
 
     const filter: ReservationFilter = { restaurantId: req.user.restaurantId };
 
     // Filter by date range
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate as string),
-        $lte: new Date(endDate as string),
-      };
+    if (startDate || endDate) {
+      filter.date = {};
+      if (startDate) {
+        filter.date.$gte = new Date(startDate as string);
+      }
+      if (endDate) {
+        filter.date.$lte = new Date(endDate as string);
+      }
     }
 
     // Filter by status
@@ -149,6 +152,18 @@ export const createReservation = async (req: Request, res: Response): Promise<vo
     });
 
     await reservation.save();
+
+    // Increment reservation count for quota tracking (Starter plan)
+    try {
+      const restaurant = await Restaurant.findById(req.user.restaurantId);
+      if (restaurant) {
+        await restaurant.incrementReservationCount();
+        logger.debug(`Reservation count incremented for restaurant: ${restaurant.name}`);
+      }
+    } catch (quotaError) {
+      logger.error('Error incrementing reservation count:', quotaError);
+      // Don't fail the request if quota increment fails
+    }
 
     logger.info(`Reservation created for restaurant ID: ${req.user.restaurantId}, Customer: ${reservation.customerName}`);
 

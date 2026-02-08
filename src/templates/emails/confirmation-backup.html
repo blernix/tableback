@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Réservation confirmée</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f3f4f6;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+
+          <!-- Header with Gradient -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600; letter-spacing: -0.5px;">
+                TableMaster
+              </h1>
+              <div style="margin-top: 20px; font-size: 48px; line-height: 1;">✅</div>
+              <h2 style="margin: 15px 0 0 0; color: #ffffff; font-size: 22px; font-weight: 500;">
+                Réservation confirmée !
+              </h2>
+            </td>
+          </tr>
+
+          <!-- Body Content -->
+          <tr>
+            <td style="padding: 40px 30px;">
+              <p style="margin: 0 0 20px 0; font-size: 16px; color: #1f2937; line-height: 1.6;">
+                Bonjour <strong>{{customerName}}</strong>,
+              </p>
+
+              <p style="margin: 0 0 30px 0; font-size: 16px; color: #4b5563; line-height: 1.6;">
+                Excellente nouvelle ! Votre réservation chez <strong>{{restaurantName}}</strong> est maintenant confirmée. Nous avons hâte de vous accueillir !
+              </p>
+
+              <!-- Reservation Details Card -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%); border-radius: 8px; overflow: hidden; border: 2px solid #10b981; margin-bottom: 30px;">
+                <tr>
+                  <td style="padding: 25px;">
+                    <h3 style="margin: 0 0 15px 0; color: #064e3b; font-size: 18px; font-weight: 600;">
+                      📅 Détails de votre réservation
+                    </h3>
+
+                    <table width="100%" cellpadding="8" cellspacing="0">
+                      <tr>
+                        <td style="color: #065f46; font-weight: 600; font-size: 14px; width: 40%;">Restaurant</td>
+                        <td style="color: #064e3b; font-size: 14px;">{{restaurantName}}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #065f46; font-weight: 600; font-size: 14px;">Date</td>
+                        <td style="color: #064e3b; font-size: 14px;">{{reservationDate}}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #065f46; font-weight: 600; font-size: 14px;">Heure</td>
+                        <td style="color: #064e3b; font-size: 14px;">{{reservationTime}}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #065f46; font-weight: 600; font-size: 14px;">Personnes</td>
+                        <td style="color: #064e3b; font-size: 14px;">{{partySize}}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Restaurant Contact Info -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f9fafb; border-radius: 8px; margin-bottom: 30px;">
+                <tr>
+                  <td style="padding: 20px;">
+                    <h3 style="margin: 0 0 12px 0; color: #1f2937; font-size: 16px; font-weight: 600;">
+                      📞 Contact du restaurant
+                    </h3>
+                    <p style="margin: 6px 0; font-size: 14px; color: #4b5563;">
+                      <strong>Téléphone :</strong> {{restaurantPhone}}
+                    </p>
+                    <p style="margin: 6px 0; font-size: 14px; color: #4b5563;">
+                      <strong>Email :</strong> {{restaurantEmail}}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Cancellation Button -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+                <tr>
+                  <td align="center" style="padding: 10px 0;">
+                    <a href="{{cancellationLink}}" style="display: inline-block; background-color: #dc2626; color: #ffffff; padding: 14px 30px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 15px;">
+                      Annuler la réservation
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0; font-size: 13px; color: #9ca3af; text-align: center;">
+                Un empêchement ? Vous pouvez annuler votre réservation en un clic.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f9fafb; padding: 30px; text-align: center; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0 0 10px 0; font-size: 14px; color: #6b7280;">
+                <strong style="color: #0066FF;">TableMaster</strong> - Votre solution de gestion de réservations
+              </p>
+              <p style="margin: 0; font-size: 12px; color: #9ca3af;">
+                © 2026 TableMaster. Tous droits réservés.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

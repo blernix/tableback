@@ -1,60 +1,201 @@
 <!DOCTYPE html>
-<html>
-<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirmation de réservation</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-weight: 300; background-color: #FAFAFA; color: #2A2A2A;">
+  <!-- Swiss Clean Email Template - TableMaster -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #FAFAFA; min-height: 100vh;">
+    <tr>
+      <td align="center" style="padding: 60px 20px;">
+        <!-- Main Content Container -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #FFFFFF; border: 1px solid #E5E5E5;">
+          
+          <!-- Header -->
+          <tr>
+            <td style="padding: 40px 30px 30px; border-bottom: 1px solid #E5E5E5;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 24px; font-weight: 400; color: #0066FF; letter-spacing: -0.5px; margin-bottom: 8px;">
+                      TableMaster
+                    </div>
+                    <div style="font-size: 32px; margin: 20px 0; color: #0066FF;">
+                      •
+                    </div>
+                    <div style="font-size: 20px; font-weight: 400; color: #2A2A2A; margin-top: 16px;">
+                      Réservation confirmée
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-  <div style="background-color: #8b5cf6; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="margin: 0;">✅ Réservation confirmée</h1>
-  </div>
+          <!-- Greeting -->
+          <tr>
+            <td style="padding: 30px 30px 0;">
+              <p style="margin: 0 0 20px 0; font-size: 16px; line-height: 1.6; color: #2A2A2A;">
+                Bonjour <strong style="font-weight: 400;">{{customerName}}</strong>,
+              </p>
+            </td>
+          </tr>
 
-  <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e5e7eb;">
-    <h2 style="margin-top: 0;">Bonjour {{customerName}},</h2>
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 20px 30px;">
+              <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #666666;">
+                Votre réservation chez <strong style="font-weight: 400;">{{restaurantName}}</strong> a été enregistrée avec succès.
+              </p>
 
-    <p>Nous vous confirmons votre réservation effectuée par téléphone. Nous sommes impatients de vous accueillir ! 📞</p>
+              <!-- Reservation Details -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; border: 1px solid #E5E5E5;">
+                <tr>
+                  <td style="padding: 24px;">
+                    <div style="font-size: 16px; font-weight: 400; color: #2A2A2A; margin-bottom: 20px; text-align: center;">
+                      Détails de votre réservation
+                    </div>
+                    
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding: 12px 0; border-bottom: 1px solid #FAFAFA;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="40%" style="vertical-align: top; padding-right: 12px;">
+                                <div style="font-size: 14px; font-weight: 400; color: #666666;">
+                                  Restaurant
+                                </div>
+                              </td>
+                              <td>
+                                <div style="font-size: 14px; color: #2A2A2A;">
+                                  {{restaurantName}}
+                                </div>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td style="padding: 12px 0; border-bottom: 1px solid #FAFAFA;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="40%" style="vertical-align: top; padding-right: 12px;">
+                                <div style="font-size: 14px; font-weight: 400; color: #666666;">
+                                  Date
+                                </div>
+                              </td>
+                              <td>
+                                <div style="font-size: 14px; color: #2A2A2A;">
+                                  {{reservationDate}}
+                                </div>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td style="padding: 12px 0; border-bottom: 1px solid #FAFAFA;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="40%" style="vertical-align: top; padding-right: 12px;">
+                                <div style="font-size: 14px; font-weight: 400; color: #666666;">
+                                  Heure
+                                </div>
+                              </td>
+                              <td>
+                                <div style="font-size: 14px; color: #2A2A2A;">
+                                  {{reservationTime}}
+                                </div>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td style="padding: 12px 0;">
+                          <table width="100%" cellpadding="0" cellspacing="0">
+                            <tr>
+                              <td width="40%" style="vertical-align: top; padding-right: 12px;">
+                                <div style="font-size: 14px; font-weight: 400; color: #666666;">
+                                  Personnes
+                                </div>
+                              </td>
+                              <td>
+                                <div style="font-size: 14px; color: #2A2A2A;">
+                                  {{partySize}}
+                                </div>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
 
-    <div style="background-color: #ede9fe; padding: 20px; border-left: 4px solid #8b5cf6; margin: 20px 0; border-radius: 4px;">
-      <h3 style="margin-top: 0; color: #5b21b6;">Détails de votre réservation</h3>
-      <p style="margin: 8px 0;"><strong style="color: #6d28d9;">Restaurant :</strong> <span style="color: #5b21b6;">{{restaurantName}}</span></p>
-      <p style="margin: 8px 0;"><strong style="color: #6d28d9;">Date :</strong> <span style="color: #5b21b6;">{{reservationDate}}</span></p>
-      <p style="margin: 8px 0;"><strong style="color: #6d28d9;">Heure :</strong> <span style="color: #5b21b6;">{{reservationTime}}</span></p>
-      <p style="margin: 8px 0;"><strong style="color: #6d28d9;">Personnes :</strong> <span style="color: #5b21b6;">{{partySize}}</span></p>
-    </div>
+              <!-- Contact Information -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; background-color: #FAFAFA; border-left: 2px solid #0066FF;">
+                <tr>
+                  <td style="padding: 20px;">
+                    <div style="font-size: 14px; font-weight: 400; color: #2A2A2A; margin-bottom: 8px;">
+                      Contact du restaurant
+                    </div>
+                    <div style="font-size: 13px; color: #666666; line-height: 1.5;">
+                      <strong style="font-weight: 400;">Téléphone :</strong> {{restaurantPhone}}<br>
+                      <strong style="font-weight: 400;">Email :</strong> {{restaurantEmail}}
+                    </div>
+                  </td>
+                </tr>
+              </table>
 
-    <div style="background-color: #f3f4f6; padding: 20px; margin: 20px 0; border-radius: 4px;">
-      <h3 style="margin-top: 0; color: #1f2937;">📞 Contact du restaurant</h3>
-      <p style="margin: 8px 0; color: #4b5563;"><strong>Téléphone :</strong> {{restaurantPhone}}</p>
-      <p style="margin: 8px 0; color: #4b5563;"><strong>Email :</strong> {{restaurantEmail}}</p>
-    </div>
+            </td>
+          </tr>
 
-    <p style="color: #6b7280; font-size: 14px;">
-      Pour toute modification ou question, n'hésitez pas à nous contacter directement aux coordonnées ci-dessus.
-    </p>
+          <!-- Actions -->
+          <tr>
+            <td style="padding: 0 30px 30px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding: 10px 0;">
+                    <a href="{{cancellationLink}}" style="display: inline-block; background-color: #FFFFFF; color: #666666; padding: 16px 40px; text-decoration: none; font-size: 15px; font-weight: 400; border: 1px solid #E5E5E5;">
+                      Annuler la réservation
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px; border-top: 1px solid #E5E5E5; background-color: #FAFAFA;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 14px; color: #666666; margin-bottom: 8px;">
+                      TableMaster
+                    </div>
+                    <div style="font-size: 12px; color: #999999; line-height: 1.5;">
+                      La solution professionnelle de gestion de réservations
+                    </div>
+                    <div style="font-size: 11px; color: #999999; margin-top: 16px;">
+                      © 2026 TableMaster. Tous droits réservés.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <p style="color: #6b7280; font-size: 14px;">
-      <strong>Besoin d'annuler ?</strong><br>
-      Si vous devez annuler votre réservation, cliquez sur le bouton ci-dessous ou contactez-nous par téléphone :
-    </p>
-
-    <p style="text-align: center; margin: 20px 0;">
-      <a href="{{cancellationLink}}" style="background-color: #ef4444; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; display: inline-block;">
-        Annuler ma réservation
-      </a>
-    </p>
-
-    <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-      Ce lien expire dans 24 heures avant votre réservation
-    </p>
-  </div>
-
-  <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 8px 8px;">
-    <p style="margin: 0 0 10px; color: #4b5563; font-size: 14px;">
-      À très bientôt ! 🍽️
-    </p>
-    <p style="margin: 0; color: #9ca3af; font-size: 14px;">
-      © 2026 TableMaster - Gestion de réservations
-    </p>
-  </div>
-
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>

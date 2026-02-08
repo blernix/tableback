@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Widget TableMaster - SIMPLE</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .info {
+      background: #e3f2fd;
+      padding: 15px;
+      border-left: 4px solid #2196F3;
+      margin-bottom: 20px;
+    }
+    .debug {
+      background: #fff3cd;
+      padding: 15px;
+      border-left: 4px solid #ffc107;
+      margin-top: 20px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    #tablemaster-widget {
+      margin-top: 20px;
+      min-height: 800px;
+      border: 2px dashed #ccc;
+      padding: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🍽️ Test du Widget TableMaster - VERSION SIMPLE</h1>
+
+  <div class="container">
+    <div class="info">
+      <strong>✅ Configuration automatique</strong>
+      <p>Cette page teste le widget avec les dernières modifications. Le formulaire devrait s'afficher ci-dessous.</p>
+    </div>
+
+    <h2>Widget de réservation :</h2>
+
+    <!-- Le widget s'affichera ici -->
+    <div id="tablemaster-widget"></div>
+
+    <div class="debug" id="debug-console">
+      <strong>🔍 Console de debug :</strong><br>
+      Initialisation...
+    </div>
+  </div>
+
+  <!-- Script du widget -->
+  <script
+    src="http://localhost:4000/widget.js"
+    data-api-key="ffa7c4566d13812779681c73c71d4f43c4707d2665963a2a840a58ddb462c9f7"
+    data-container="tablemaster-widget"
+    data-height="800px">
+  </script>
+
+  <!-- Debug script -->
+  <script>
+    const debugConsole = document.getElementById('debug-console');
+    const originalLog = console.log;
+    const originalError = console.error;
+
+    function addDebugMessage(type, ...args) {
+      const message = args.map(arg => {
+        if (typeof arg === 'object') {
+          return JSON.stringify(arg, null, 2);
+        }
+        return String(arg);
+      }).join(' ');
+
+      const time = new Date().toLocaleTimeString();
+      const color = type === 'error' ? '#d73a49' : type === 'warn' ? '#ffc107' : '#28a745';
+      debugConsole.innerHTML += `<br><span style="color: ${color}">[${time}] ${type.toUpperCase()}: ${message}</span>`;
+    }
+
+    console.log = function(...args) {
+      addDebugMessage('log', ...args);
+      originalLog.apply(console, args);
+    };
+
+    console.error = function(...args) {
+      addDebugMessage('error', ...args);
+      originalError.apply(console, args);
+    };
+
+    // Monitor iframe loading
+    setTimeout(() => {
+      const iframe = document.querySelector('#tablemaster-widget iframe');
+      if (iframe) {
+        console.log('✅ Iframe créé avec succès');
+        console.log('Iframe src:', iframe.src);
+
+        iframe.addEventListener('load', () => {
+          console.log('✅ Iframe chargé');
+
+          // Try to detect content
+          setTimeout(() => {
+            try {
+              const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+              if (iframeDoc && iframeDoc.body) {
+                const bodyText = iframeDoc.body.innerText.substring(0, 100);
+                console.log('Contenu iframe:', bodyText);
+              } else {
+                console.log('⚠️ Impossible d\'accéder au contenu de l\'iframe (c\'est normal si cross-origin)');
+              }
+            } catch (e) {
+              console.log('⚠️ Cross-origin iframe (c\'est normal)');
+            }
+          }, 1000);
+        });
+
+        iframe.addEventListener('error', (e) => {
+          console.error('❌ Erreur lors du chargement de l\'iframe:', e);
+        });
+      } else {
+        console.error('❌ Aucune iframe trouvée dans le widget');
+      }
+    }, 500);
+
+    // Test API direct
+    console.log('🧪 Test de l\'API backend...');
+    fetch('http://localhost:4000/health')
+      .then(r => r.json())
+      .then(data => {
+        console.log('✅ Backend accessible:', data.status);
+      })
+      .catch(err => {
+        console.error('❌ Backend non accessible:', err.message);
+      });
+
+    console.log('🧪 Test du frontend...');
+    fetch('http://localhost:3000/')
+      .then(r => {
+        console.log('✅ Frontend accessible (status:', r.status + ')');
+      })
+      .catch(err => {
+        console.error('❌ Frontend non accessible:', err.message);
+      });
+
+    console.log('🧪 Test de l\'API via proxy Next.js...');
+    fetch('http://localhost:3000/api/public/restaurant-info', {
+      headers: {
+        'x-api-key': 'ffa7c4566d13812779681c73c71d4f43c4707d2665963a2a840a58ddb462c9f7'
+      }
+    })
+      .then(r => r.json())
+      .then(data => {
+        console.log('✅ API proxy fonctionne:', data.restaurant?.name);
+      })
+      .catch(err => {
+        console.error('❌ API proxy ne fonctionne pas:', err.message);
+      });
+  </script>
+
+</body>
+</html>

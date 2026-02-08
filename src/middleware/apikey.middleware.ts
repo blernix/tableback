@@ -14,37 +14,61 @@ declare global {
 
 export const verifyApiKey = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const apiKey = req.headers['x-api-key'] as string;
+    // Skip API key verification for OPTIONS requests (CORS preflight)
+    if (req.method === 'OPTIONS') {
+      return next();
+    }
 
-    if (!apiKey) {
+    const apiKey = req.headers['x-api-key'] as string;
+    const slug = req.headers['x-slug'] as string;
+
+    // Support both API key (legacy) and slug (new system)
+    if (!apiKey && !slug) {
       res.status(401).json({
         error: {
-          message: 'API key is required. Please provide it in the X-API-Key header.',
+          message: 'API key or slug is required. Please provide it in the X-API-Key or X-Slug header.',
         },
       });
       return;
     }
 
-    // Find restaurant by API key
-    const restaurant = await Restaurant.findOne({ apiKey, status: 'active' });
+    let restaurant;
+    
+    if (slug) {
+      // Find restaurant by slug (new system)
+      restaurant = await Restaurant.findOne({ publicSlug: slug, status: 'active' });
+      
+      if (!restaurant) {
+        res.status(401).json({
+          error: {
+            message: 'Invalid slug or restaurant is inactive',
+          },
+        });
+        return;
+      }
+    } else {
+      // Find restaurant by API key (legacy system)
+      restaurant = await Restaurant.findOne({ apiKey, status: 'active' });
 
-    if (!restaurant) {
-      res.status(401).json({
-        error: {
-          message: 'Invalid API key or restaurant is inactive',
-        },
-      });
-      return;
+      if (!restaurant) {
+        res.status(401).json({
+          error: {
+            message: 'Invalid API key or restaurant is inactive',
+          },
+        });
+        return;
+      }
     }
 
     // Attach restaurant to request
     req.restaurant = restaurant;
+    logger.info(`Restaurant identified: ${restaurant.name} (ID: ${restaurant._id}, Slug: ${restaurant.publicSlug})`);
     next();
   } catch (error) {
-    logger.error('API key verification error:', error);
+    logger.error('Restaurant verification error:', error);
     res.status(500).json({
       error: {
-        message: 'Internal server error during API key verification',
+        message: 'Internal server error during restaurant verification',
       },
     });
   }

@@ -1,61 +1,122 @@
 <!DOCTYPE html>
-<html>
-<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Votre avis nous intéresse</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-weight: 300; background-color: #FAFAFA; color: #2A2A2A;">
+  <!-- Swiss Clean Email Template - TableMaster -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #FAFAFA; min-height: 100vh;">
+    <tr>
+      <td align="center" style="padding: 60px 20px;">
+        <!-- Main Content Container -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #FFFFFF; border: 1px solid #E5E5E5;">
+          
+          <!-- Header -->
+          <tr>
+            <td style="padding: 40px 30px 30px; border-bottom: 1px solid #E5E5E5;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 24px; font-weight: 400; color: #0066FF; letter-spacing: -0.5px; margin-bottom: 8px;">
+                      TableMaster
+                    </div>
+                    <div style="font-size: 32px; margin: 20px 0; color: #0066FF;">
+                      •
+                    </div>
+                    <div style="font-size: 20px; font-weight: 400; color: #2A2A2A; margin-top: 16px;">
+                      Votre avis nous intéresse
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-  <div style="background-color: #f59e0b; color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0;">
-    <h1 style="margin: 0;">⭐ Merci pour votre visite !</h1>
-  </div>
+          <!-- Greeting -->
+          <tr>
+            <td style="padding: 30px 30px 0;">
+              <p style="margin: 0 0 20px 0; font-size: 16px; line-height: 1.6; color: #2A2A2A;">
+                Bonjour <strong style="font-weight: 400;">{{customerName}}</strong>,
+              </p>
+            </td>
+          </tr>
 
-  <div style="background-color: #ffffff; padding: 30px; border: 1px solid #e5e7eb;">
-    <h2 style="margin-top: 0;">Bonjour {{customerName}},</h2>
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 20px 30px;">
+              <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #666666;">
+                Merci d'avoir choisi <strong style="font-weight: 400;">{{restaurantName}}</strong>. Nous espérons que vous avez passé un excellent moment.
+              </p>
 
-    <p>Nous espérons que vous avez passé un agréable moment au {{restaurantName}} ! 🍽️</p>
+              <p style="margin: 0 0 32px 0; font-size: 16px; line-height: 1.6; color: #666666;">
+                Votre avis est précieux pour nous et pour nos futurs clients. Pourriez-vous prendre quelques minutes pour laisser un avis sur Google ?
+              </p>
 
-    <p>Votre avis compte énormément pour nous et nous aide à nous améliorer continuellement.</p>
+              <!-- Help Section -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; background-color: #FAFAFA; border-left: 2px solid #0066FF;">
+                <tr>
+                  <td style="padding: 20px;">
+                    <div style="font-size: 14px; font-weight: 400; color: #2A2A2A; margin-bottom: 8px;">
+                      Pourquoi votre avis compte
+                    </div>
+                    <div style="font-size: 13px; color: #666666; line-height: 1.5;">
+                      Les avis aident les futurs clients à faire leur choix et permettent au restaurant d'améliorer son service.
+                    </div>
+                  </td>
+                </tr>
+              </table>
 
-    <div style="background-color: #fef3c7; padding: 20px; border-left: 4px solid #f59e0b; margin: 20px 0; border-radius: 4px;">
-      <p style="margin: 0; color: #92400e; font-size: 16px;">
-        <strong>Pourriez-vous prendre un instant pour partager votre expérience ?</strong>
-      </p>
-      <p style="margin: 10px 0 0; color: #78350f; font-size: 14px;">
-        Votre retour nous permettra d'offrir une expérience encore meilleure à nos clients.
-      </p>
-    </div>
+            </td>
+          </tr>
 
-    <p style="text-align: center; margin: 30px 0;">
-      <a href="{{googleReviewLink}}" style="background-color: #f59e0b; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px; font-weight: bold;">
-        ⭐ Laisser un avis sur Google
-      </a>
-    </p>
+          <!-- Actions -->
+          <tr>
+            <td style="padding: 0 30px 30px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding: 10px 0;">
+                    <a href="{{googleReviewLink}}" style="display: inline-block; background-color: #0066FF; color: #FFFFFF; padding: 16px 40px; text-decoration: none; font-size: 15px; font-weight: 400; border: none;">
+                      Laisser un avis
+                    </a>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="padding: 20px 0 0;">
+                    <div style="font-size: 13px; color: #999999;">
+                      Cela ne prendra que 2 minutes et nous aidera énormément
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <p style="color: #6b7280; font-size: 14px; text-align: center;">
-      Cela ne prend que quelques secondes et nous aide vraiment ! 🙏
-    </p>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px; border-top: 1px solid #E5E5E5; background-color: #FAFAFA;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 14px; color: #666666; margin-bottom: 8px;">
+                      TableMaster
+                    </div>
+                    <div style="font-size: 12px; color: #999999; line-height: 1.5;">
+                      La solution professionnelle de gestion de réservations
+                    </div>
+                    <div style="font-size: 11px; color: #999999; margin-top: 16px;">
+                      © 2026 TableMaster. Tous droits réservés.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-    <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 30px 0;">
-
-    <div style="background-color: #f3f4f6; padding: 20px; margin: 20px 0; border-radius: 4px;">
-      <h3 style="margin-top: 0; color: #1f2937;">📞 Nous contacter</h3>
-      <p style="margin: 8px 0; color: #4b5563;"><strong>Téléphone :</strong> {{restaurantPhone}}</p>
-      <p style="margin: 8px 0; color: #4b5563;"><strong>Email :</strong> {{restaurantEmail}}</p>
-    </div>
-
-    <p style="color: #6b7280; font-size: 14px;">
-      Si vous avez des suggestions ou des remarques à nous faire directement, n'hésitez pas à nous répondre à cet email.
-    </p>
-  </div>
-
-  <div style="background-color: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 8px 8px;">
-    <p style="margin: 0 0 10px; color: #4b5563; font-size: 14px;">
-      Merci et à bientôt ! 🌟
-    </p>
-    <p style="margin: 0 0 5px; color: #4b5563; font-size: 14px; font-weight: bold;">
-      L'équipe du {{restaurantName}}
-    </p>
-    <p style="margin: 0; color: #9ca3af; font-size: 14px;">
-      © 2026 TableMaster - Gestion de réservations
-    </p>
-  </div>
-
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>

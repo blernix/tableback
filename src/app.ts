@@ -17,29 +17,30 @@ import dayBlockRoutes from './routes/dayblock.routes';
 import userRoutes from './routes/user.routes';
 import notificationRoutes from './routes/notification.routes';
 import twoFactorRoutes from './routes/twoFactor.routes';
+import billingRoutes from './routes/billing.routes';
 import { sanitizeRequest } from './middleware/sanitize.middleware';
+import { handleWebhook } from './controllers/billing.controller';
 
 // Load environment variables
 dotenv.config();
 
 const app: Application = express();
 
-// Security middleware with Content Security Policy
+// Stripe webhook endpoint needs raw body (before JSON parsing)
+// This must come BEFORE express.json() middleware
+// Handle webhook directly here to preserve raw body
+app.post(
+  '/api/billing/webhook',
+  express.raw({ type: 'application/json' }),
+  handleWebhook
+);
+
+// Security middleware
+// CSP is disabled because this is an API server, not a web page server
+// CSP headers only make sense for HTML pages that execute scripts
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:', 'https:'],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'"],
-        objectSrc: ["'none'"],
-        mediaSrc: ["'self'"],
-        frameSrc: ["'none'"],
-      },
-    },
+    contentSecurityPolicy: false, // Disable CSP for API
     crossOriginEmbedderPolicy: false, // Disable for API usage
   })
 );
@@ -84,15 +85,11 @@ app.use((error: any, req: Request, res: Response, next: NextFunction): void => {
 });
 
 // CORS configuration
-const corsOrigins = process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'];
-const isDevelopment = process.env.NODE_ENV === 'development';
-
+// Allow all origins since public endpoints are protected by API key
+// This is necessary for the embeddable widget to work on any domain
 app.use(
   cors({
-    origin: isDevelopment ? (_origin, callback) => {
-      // Allow all origins in development for easier testing
-      callback(null, true);
-    } : corsOrigins,
+    origin: true, // Accept all origins
     credentials: true,
   })
 );
@@ -167,6 +164,49 @@ app.use(sanitizeRequest);
 // Apply rate limiting to all API routes (after logging to see blocked requests)
 app.use('/api/', limiter);
 
+// Serve widget.js dynamically with correct frontend URL
+// This must come BEFORE express.static to override the static file
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+app.get('/widget.js', (_req: Request, res: Response) => {
+  try {
+    // Read the widget template
+    const widgetPath = join(__dirname, '../public/widget.js');
+    let widgetContent = readFileSync(widgetPath, 'utf-8');
+
+    // Get frontend URL from environment variable
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+    // Replace the default URL with the actual frontend URL
+    widgetContent = widgetContent.replace(
+      /frontendUrl: currentScript\.getAttribute\('data-frontend-url'\) \|\| '[^']*'/,
+      `frontendUrl: currentScript.getAttribute('data-frontend-url') || '${frontendUrl}'`
+    );
+
+    // Set proper headers for JavaScript
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(widgetContent);
+  } catch (error) {
+    logger.error('Error loading widget.js:', error);
+    res.status(500).send('// Error loading widget');
+  }
+});
+
+// Serve static files (other than widget.js) with CORS headers
+app.use(express.static('public', {
+  setHeaders: (res, path) => {
+    // Allow JS files to be loaded from any origin (including file://)
+    if (path.endsWith('.js')) {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+  }
+}));
+
 // Routes
 app.use('/', healthRoutes);
 app.use('/api/auth', authRoutes);
@@ -178,6 +218,7 @@ app.use('/api/day-blocks', dayBlockRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/2fa', twoFactorRoutes);
+app.use('/api/billing', billingRoutes);
 app.use('/api/public', publicRoutes);
 
 // 404 handler

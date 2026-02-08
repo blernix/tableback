@@ -542,6 +542,206 @@ export async function sendReviewRequestEmail(
   });
 }
 
+/**
+ * 9. SEND QUOTA WARNING EMAIL
+ *
+ * Sent to restaurant when approaching or reaching monthly reservation quota (Starter plan)
+ *
+ * Template: quota-warning.html
+ * Variables: restaurantName, message, current, limit, remaining, percentage,
+ *           headerColor, headerIcon, headerTitle, alertBg, alertBorder, alertColor, ctaSection, dashboardLink
+ *
+ * @param restaurant - Restaurant object with email
+ * @param quotaInfo - Quota information object
+ * @param level - Warning level: 80, 90, or 100 (percentage)
+ */
+export async function sendQuotaWarningEmail(
+  restaurant: { _id: string; name: string; email: string },
+  quotaInfo: { current: number; limit: number; remaining: number; percentage: number },
+  level: 80 | 90 | 100
+): Promise<EmailResult> {
+  // Define email configuration based on warning level
+  const levelConfig = {
+    80: {
+      headerColor: '#f59e0b', // amber
+      headerIcon: '⚠️',
+      headerTitle: 'Quota bientôt atteint',
+      alertBg: '#fffbeb',
+      alertBorder: '#f59e0b',
+      alertColor: '#92400e',
+      message: `Vous avez utilisé <strong>${quotaInfo.percentage}%</strong> de votre quota mensuel de réservations. Il vous reste encore <strong>${quotaInfo.remaining} réservations</strong> ce mois.`,
+      ctaSection: `<div style="background-color: #dbeafe; padding: 15px; border-radius: 4px; margin-top: 20px;">
+        <p style="margin: 0; color: #1e40af; font-size: 14px;">
+          💡 <strong>Astuce :</strong> Passez au plan Pro pour des réservations illimitées et ne plus vous soucier des limites mensuelles.
+        </p>
+      </div>`,
+    },
+    90: {
+      headerColor: '#f97316', // orange
+      headerIcon: '⚠️',
+      headerTitle: 'Attention : Quota presque atteint',
+      alertBg: '#fff7ed',
+      alertBorder: '#f97316',
+      alertColor: '#7c2d12',
+      message: `<strong>Attention !</strong> Vous avez utilisé <strong>${quotaInfo.percentage}%</strong> de votre quota mensuel. Il ne vous reste que <strong>${quotaInfo.remaining} réservations</strong> ce mois.`,
+      ctaSection: `<div style="background-color: #dbeafe; padding: 15px; border-radius: 4px; margin-top: 20px;">
+        <p style="margin: 0; color: #1e40af; font-size: 14px;">
+          🚀 <strong>Recommandé :</strong> Pour éviter les interruptions, passez dès maintenant au plan Pro pour bénéficier de réservations illimitées.
+        </p>
+      </div>`,
+    },
+    100: {
+      headerColor: '#dc2626', // red
+      headerIcon: '🚫',
+      headerTitle: 'Quota mensuel atteint',
+      alertBg: '#fef2f2',
+      alertBorder: '#dc2626',
+      alertColor: '#991b1b',
+      message: `<strong>Limite atteinte !</strong> Vous avez atteint votre quota mensuel de <strong>${quotaInfo.limit} réservations</strong>. Vous ne pouvez plus créer de nouvelles réservations ce mois.`,
+      ctaSection: `<div style="background-color: #fee2e2; padding: 15px; border-radius: 4px; margin-top: 20px; border: 2px solid #dc2626;">
+        <p style="margin: 0; color: #991b1b; font-size: 14px; font-weight: bold;">
+          ⏰ Action requise : Passez au plan Pro immédiatement pour continuer à accepter des réservations.
+        </p>
+      </div>`,
+    },
+  };
+
+  const config = levelConfig[level];
+  const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
+
+  return sendEmail({
+    to: restaurant.email,
+    toName: restaurant.name,
+    subject: `[TableMaster] ${config.headerTitle} - ${quotaInfo.current}/${quotaInfo.limit} réservations`,
+    templateName: 'quota-warning',
+    params: {
+      restaurantName: restaurant.name,
+      message: config.message,
+      current: quotaInfo.current,
+      limit: quotaInfo.limit,
+      remaining: quotaInfo.remaining,
+      percentage: quotaInfo.percentage,
+      headerColor: config.headerColor,
+      headerIcon: config.headerIcon,
+      headerTitle: config.headerTitle,
+      alertBg: config.alertBg,
+      alertBorder: config.alertBorder,
+      alertColor: config.alertColor,
+      ctaSection: config.ctaSection,
+      dashboardLink,
+    },
+  });
+}
+
+/**
+ * 10. SEND WELCOME EMAIL
+ *
+ * Sent when new restaurant account is created
+ *
+ * Template: welcome.html
+ * Variables: userName, restaurantName, dashboardLink
+ *
+ * @param user - User object with name and email
+ * @param restaurant - Restaurant object with name
+ */
+export async function sendWelcomeEmail(
+  user: { name?: string; email: string },
+  restaurant: { name: string }
+): Promise<EmailResult> {
+  const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
+
+  return sendEmail({
+    to: user.email,
+    toName: user.name || user.email,
+    subject: '🎉 Bienvenue sur TableMaster !',
+    templateName: 'welcome',
+    params: {
+      userName: user.name || 'Restaurateur',
+      restaurantName: restaurant.name,
+      dashboardLink,
+    },
+  });
+}
+
+/**
+ * 11. SEND SUBSCRIPTION CONFIRMED EMAIL
+ *
+ * Sent after successful Stripe payment and subscription creation
+ *
+ * Template: subscription-confirmed.html
+ * Variables: userName, planName, price, billingPeriod, nextBillingDate,
+ *           isProPlan, quotaLimit, dashboardLink, billingLink
+ *
+ * @param user - User object with name and email
+ * @param subscriptionInfo - Subscription details
+ */
+export async function sendSubscriptionConfirmedEmail(
+  user: { name?: string; email: string },
+  subscriptionInfo: {
+    planName: string;
+    price: string;
+    billingPeriod: string;
+    nextBillingDate: string;
+    isProPlan: boolean;
+    quotaLimit?: number;
+  }
+): Promise<EmailResult> {
+  const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
+  const billingLink = `${process.env.FRONTEND_URL}/dashboard/billing`;
+
+  // Styles for conditional display
+  const proSectionStyle = subscriptionInfo.isProPlan ? 'display: block;' : 'display: none;';
+  const starterSectionStyle = subscriptionInfo.isProPlan ? 'display: none;' : 'display: block;';
+
+  return sendEmail({
+    to: user.email,
+    toName: user.name || user.email,
+    subject: `✅ Abonnement ${subscriptionInfo.planName} confirmé - TableMaster`,
+    templateName: 'subscription-confirmed',
+    params: {
+      userName: user.name || 'Restaurateur',
+      planName: subscriptionInfo.planName,
+      price: subscriptionInfo.price,
+      billingPeriod: subscriptionInfo.billingPeriod,
+      nextBillingDate: subscriptionInfo.nextBillingDate,
+      isProPlan: subscriptionInfo.isProPlan ? 'true' : '',
+      quotaLimit: subscriptionInfo.quotaLimit || 0,
+      dashboardLink,
+      billingLink,
+      proSectionStyle,
+      starterSectionStyle,
+    },
+  });
+}
+
+/**
+ * Send subscription extended email (when admin offers free days)
+ */
+export async function sendSubscriptionExtendedEmail(
+  restaurant: { name: string; email: string },
+  extensionInfo: {
+    daysOffered: number;
+    previousEndDate: string;
+    newEndDate: string;
+  }
+): Promise<EmailResult> {
+  const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
+
+  return sendEmail({
+    to: restaurant.email,
+    toName: restaurant.name,
+    subject: `🎁 ${extensionInfo.daysOffered} jour(s) offert(s) sur votre abonnement - TableMaster`,
+    templateName: 'subscription-extended',
+    params: {
+      restaurantName: restaurant.name,
+      daysOffered: extensionInfo.daysOffered,
+      previousEndDate: extensionInfo.previousEndDate,
+      newEndDate: extensionInfo.newEndDate,
+      dashboardLink,
+    },
+  });
+}
+
 // Export sendEmail for testing purposes
 export { sendEmail };
 

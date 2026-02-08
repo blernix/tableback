@@ -14,23 +14,106 @@ import {
 import { sendPushNotificationToRestaurant } from '../services/pushNotificationService';
 import { emitToRestaurant, createReservationEvent } from '../services/sseService';
 import { fromZonedTime, toZonedTime, format } from 'date-fns-tz';
+import { sanitizeReservationInput } from '../utils/sanitize';
 
-// Validation schema for public reservation creation
-const createPublicReservationSchema = z.object({
-  customerName: z.string().min(1, 'Customer name is required').trim(),
-  customerEmail: z.string().email('Invalid email').trim(),
-  customerPhone: z.string().min(1, 'Phone is required').trim(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Invalid date format (YYYY-MM-DD)'),
-  time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Invalid time format (HH:MM)'),
-  numberOfGuests: z.number().int().min(1, 'At least 1 guest is required'),
-  notes: z.string().trim().optional(),
-});
+// Validation schema for public reservation creation with enhanced security
+const createPublicReservationSchema = z
+  .object({
+    customerName: z
+      .string()
+      .min(2, 'Le nom doit contenir au moins 2 caractères')
+      .max(100, 'Le nom ne peut pas dépasser 100 caractères')
+      .trim()
+      .refine((val) => !/[<>{}]/g.test(val), {
+        message: 'Le nom contient des caractères non autorisés',
+      }),
+    customerEmail: z
+      .string()
+      .email('Email invalide')
+      .max(255, "L'email ne peut pas dépasser 255 caractères")
+      .trim()
+      .toLowerCase()
+      .refine((val) => !/[<>{}]/g.test(val), {
+        message: "L'email contient des caractères non autorisés",
+      }),
+    customerPhone: z
+      .string()
+      .min(10, 'Le numéro de téléphone doit contenir au moins 10 chiffres')
+      .max(20, 'Le numéro de téléphone ne peut pas dépasser 20 caractères')
+      .trim()
+      .refine(
+        (val) => /^[+]?[(]?[0-9]{1,4}[)]?[-\s.]?[(]?[0-9]{1,4}[)]?[-\s.]?[0-9]{1,9}$/.test(val),
+        {
+          message: 'Format de téléphone invalide',
+        }
+      ),
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'Format de date invalide (YYYY-MM-DD)')
+      .refine(
+        (val) => {
+          const date = new Date(val);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          return date >= today;
+        },
+        {
+          message: 'La date ne peut pas être dans le passé',
+        }
+      )
+      .refine(
+        (val) => {
+          const date = new Date(val);
+          const maxDate = new Date();
+          maxDate.setMonth(maxDate.getMonth() + 6); // Maximum 6 months in advance
+          return date <= maxDate;
+        },
+        {
+          message: 'La date ne peut pas être plus de 6 mois dans le futur',
+        }
+      ),
+    time: z.string().regex(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, 'Format de temps invalide (HH:MM)'),
+    numberOfGuests: z
+      .number()
+      .int()
+      .min(1, 'Au moins 1 personne est requise')
+      .max(20, 'Le nombre maximum de personnes est 20'),
+    notes: z
+      .string()
+      .max(500, 'Les notes ne peuvent pas dépasser 500 caractères')
+      .trim()
+      .optional()
+      .default(''),
+    // Honeypot field for bot detection (should be empty)
+    _honeypot: z.string().max(0, 'Invalid request').optional().default(''),
+  })
+  .strict(); // Reject any additional fields not in the schema
 
 // Create a reservation (public endpoint)
 export const createPublicReservation = async (req: Request, res: Response): Promise<void> => {
   try {
     const restaurant = req.restaurant!;
-    const validatedData = createPublicReservationSchema.parse(req.body);
+
+    // Step 1: Sanitize all inputs to prevent XSS and injection attacks
+    const sanitizedInput = sanitizeReservationInput(req.body);
+
+    // Step 2: Check honeypot field - if filled, it's likely a bot
+    if (sanitizedInput._honeypot && sanitizedInput._honeypot.length > 0) {
+      logger.warn('Honeypot triggered - potential bot detected', {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      // Return success to not alert the bot, but don't create reservation
+      res.status(201).json({
+        reservation: {
+          message: 'Réservation enregistrée',
+        },
+      });
+      return;
+    }
+
+    // Step 3: Validate sanitized data with Zod schema
+    const validatedData = createPublicReservationSchema.parse(sanitizedInput);
 
     // Check if the date is blocked
     const isBlocked = await DayBlock.findOne({
@@ -124,6 +207,15 @@ export const createPublicReservation = async (req: Request, res: Response): Prom
     });
 
     await reservation.save();
+
+    // Increment reservation count for quota tracking (Starter plan)
+    try {
+      await restaurant.incrementReservationCount();
+      logger.debug(`Reservation count incremented for restaurant: ${restaurant.name}`);
+    } catch (quotaError) {
+      logger.error('Error incrementing reservation count:', quotaError);
+      // Don't fail the request if quota increment fails
+    }
 
     logger.info(`Public reservation created for restaurant: ${restaurant.name}, Customer: ${reservation.customerName}`);
 
@@ -442,11 +534,50 @@ export const getRestaurantInfo = async (req: Request, res: Response): Promise<vo
           totalTables: restaurant.tablesConfig.totalTables,
           averageCapacity: restaurant.tablesConfig.averageCapacity,
         },
+        widgetConfig: restaurant.widgetConfig || {
+          primaryColor: '#0066FF',
+          secondaryColor: '#2A2A2A',
+          fontFamily: 'system-ui, sans-serif',
+          borderRadius: '4px',
+        },
       },
     });
   } catch (error) {
     logger.error('Error getting restaurant info:', error);
     res.status(500).json({ error: { message: 'Failed to get restaurant information' } });
+  }
+};
+
+// Get widget configuration only (lightweight endpoint for widget)
+export const getWidgetConfig = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const restaurant = req.restaurant!;
+
+    res.json({
+      widgetConfig: {
+        // Form colors (affecte le formulaire)
+        primaryColor: restaurant.widgetConfig?.primaryColor || '#0066FF',
+        secondaryColor: restaurant.widgetConfig?.secondaryColor || '#2A2A2A',
+        fontFamily: restaurant.widgetConfig?.fontFamily || 'system-ui, sans-serif',
+        borderRadius: restaurant.widgetConfig?.borderRadius || '4px',
+        
+        // Button specific colors (bouton flottant uniquement)
+        buttonBackgroundColor: restaurant.widgetConfig?.buttonBackgroundColor || restaurant.widgetConfig?.primaryColor || '#0066FF',
+        buttonTextColor: restaurant.widgetConfig?.buttonTextColor || '#FFFFFF',
+        buttonHoverColor: restaurant.widgetConfig?.buttonHoverColor || '#0052CC',
+        
+        // Floating button general configs
+        buttonText: restaurant.widgetConfig?.buttonText || 'Réserver une table',
+        buttonStyle: restaurant.widgetConfig?.buttonStyle || 'round',
+        buttonPosition: restaurant.widgetConfig?.buttonPosition || 'bottom-right',
+        buttonIcon: restaurant.widgetConfig?.buttonIcon !== false, // default false now
+        modalWidth: restaurant.widgetConfig?.modalWidth || '500px',
+        modalHeight: restaurant.widgetConfig?.modalHeight || '600px',
+      },
+    });
+  } catch (error) {
+    logger.error('Error getting widget config:', error);
+    res.status(500).json({ error: { message: 'Failed to get widget configuration' } });
   }
 };
 

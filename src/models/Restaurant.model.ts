@@ -1,5 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 import crypto from 'crypto';
+import { generateShortCode } from '../utils/slugGenerator';
 
 interface OpeningSlot {
   start: string;
@@ -38,6 +39,50 @@ export interface IRestaurant extends Document {
   timezone: string;
   logoUrl?: string;
   googleReviewLink?: string;
+  // Account type and subscription
+  accountType: 'managed' | 'self-service';
+  subscription?: {
+    plan: 'starter' | 'pro';
+    status: 'trial' | 'active' | 'past_due' | 'cancelled' | 'expired';
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
+    currentPeriodStart?: Date;
+    currentPeriodEnd?: Date;
+    cancelAtPeriodEnd?: boolean;
+    trialEndsAt?: Date;
+  };
+  // Reservation quota (for Starter plan)
+  reservationQuota?: {
+    monthlyCount: number;
+    lastResetDate: Date;
+    limit: number; // 50 for Starter, unlimited (-1) for Pro and Managed
+    emailsSent?: {
+      at80: boolean;
+      at90: boolean;
+      at100: boolean;
+    };
+  };
+  // Widget customization (Pro plan only)
+  widgetConfig?: {
+    // Form colors (affecte le formulaire de réservation)
+    primaryColor?: string;
+    secondaryColor?: string;
+    fontFamily?: string;
+    borderRadius?: string;
+    // Floating button specific colors (bouton flottant uniquement)
+    buttonBackgroundColor?: string;
+    buttonTextColor?: string;
+    buttonHoverColor?: string;
+    // Floating button general configs
+    buttonText?: string;
+    buttonPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+    buttonStyle?: 'round' | 'square' | 'minimal';
+    buttonIcon?: boolean;
+    modalWidth?: string;
+    modalHeight?: string;
+  };
+  // Vanity URL system
+  publicSlug?: string; // Short code or custom slug for pretty URLs
   menu: {
     displayMode: 'pdf' | 'detailed' | 'both';
     pdfUrl?: string;
@@ -58,6 +103,18 @@ export interface IRestaurant extends Document {
   createdAt: Date;
   updatedAt: Date;
   generateApiKey(): string;
+  isSubscriptionActive(): boolean;
+  canCustomizeWidget(): boolean;
+  canCreateReservation(): boolean;
+  incrementReservationCount(): Promise<void>;
+  resetMonthlyReservationCount(): Promise<void>;
+  getReservationQuotaInfo(): {
+    current: number;
+    limit: number;
+    remaining: number;
+    percentage: number;
+    isUnlimited: boolean;
+  };
 }
 
 const openingSlotSchema = new Schema({
@@ -120,8 +177,156 @@ const restaurantSchema = new Schema<IRestaurant>(
       type: String,
       default: null,
     },
-    menu: {
-      displayMode: {
+    // Account type and subscription
+    accountType: {
+      type: String,
+      enum: ['managed', 'self-service'],
+      default: 'managed',
+    },
+    subscription: {
+      plan: {
+        type: String,
+        enum: ['starter', 'pro'],
+        default: undefined,
+      },
+      status: {
+        type: String,
+        enum: ['trial', 'active', 'past_due', 'cancelled', 'expired'],
+        default: undefined,
+      },
+      stripeCustomerId: {
+        type: String,
+        default: undefined,
+      },
+      stripeSubscriptionId: {
+        type: String,
+        default: undefined,
+      },
+      currentPeriodStart: {
+        type: Date,
+        default: undefined,
+      },
+      currentPeriodEnd: {
+        type: Date,
+        default: undefined,
+      },
+      cancelAtPeriodEnd: {
+        type: Boolean,
+        default: false,
+      },
+      trialEndsAt: {
+        type: Date,
+        default: undefined,
+      },
+    },
+    // Reservation quota (for Starter plan)
+    reservationQuota: {
+      monthlyCount: {
+        type: Number,
+        default: 0,
+      },
+      lastResetDate: {
+        type: Date,
+        default: () => new Date(),
+      },
+      limit: {
+        type: Number,
+        default: -1, // -1 means unlimited (Managed and Pro), 50 for Starter
+      },
+      emailsSent: {
+        at80: {
+          type: Boolean,
+          default: false,
+        },
+        at90: {
+          type: Boolean,
+          default: false,
+        },
+        at100: {
+          type: Boolean,
+          default: false,
+        },
+      },
+    },
+     // Widget customization (Pro plan only)
+     widgetConfig: {
+       // Form colors (affecte le formulaire de réservation)
+       primaryColor: {
+         type: String,
+         default: '#3B82F6', // Tailwind blue-500
+       },
+       secondaryColor: {
+         type: String,
+         default: '#10B981', // Tailwind green-500
+       },
+       fontFamily: {
+         type: String,
+         default: 'Inter, system-ui, sans-serif',
+       },
+       borderRadius: {
+         type: String,
+         default: '8px',
+       },
+       // Floating button specific colors (bouton flottant uniquement)
+       buttonBackgroundColor: {
+         type: String,
+         default: '#3B82F6', // Même que primaryColor par défaut
+       },
+       buttonTextColor: {
+         type: String,
+         default: '#FFFFFF', // Blanc par défaut
+       },
+       buttonHoverColor: {
+         type: String,
+         default: '#2563EB', // Bleu plus foncé par défaut
+       },
+       // Floating button general configs
+       buttonText: {
+         type: String,
+         default: 'Réserver une table',
+       },
+        buttonPosition: {
+          type: String,
+          enum: ['bottom-right', 'bottom-left', 'top-right', 'top-left'],
+          default: 'bottom-right',
+        },
+       buttonStyle: {
+         type: String,
+         enum: ['round', 'square', 'minimal'],
+         default: 'round',
+       },
+       buttonIcon: {
+         type: Boolean,
+         default: false, // Désactivé par défaut
+       },
+       modalWidth: {
+         type: String,
+         default: '500px',
+       },
+        modalHeight: {
+          type: String,
+          default: '600px',
+        },
+        },
+        // Vanity URL system - short code + customizable slug
+        publicSlug: {
+          type: String,
+          unique: true,
+          sparse: true, // Allow null values for existing restaurants
+          lowercase: true,
+          trim: true,
+          index: true,
+          validate: {
+            validator: function(v: string) {
+              if (!v) return true; // Allow empty/null
+              // Alphanumeric + hyphens, 3-50 characters
+              return /^[a-z0-9-]{3,50}$/.test(v);
+            },
+            message: 'Slug must be 3-50 characters, lowercase alphanumeric and hyphens only'
+          }
+        },
+      menu: {
+       displayMode: {
         type: String,
         enum: ['pdf', 'detailed', 'both'],
         default: 'detailed',
@@ -183,11 +388,18 @@ const restaurantSchema = new Schema<IRestaurant>(
   }
 );
 
-// Generate API key before saving
+// Generate API key and slug before saving
 restaurantSchema.pre('save', function (next) {
   if (!this.apiKey) {
     this.apiKey = crypto.randomBytes(32).toString('hex');
   }
+  
+  // Generate a unique slug if not already set
+  if (!this.publicSlug) {
+    // Generate a random 8-character slug
+    this.publicSlug = generateShortCode(8);
+  }
+  
   next();
 });
 
@@ -197,9 +409,222 @@ restaurantSchema.methods.generateApiKey = function (): string {
   return this.apiKey;
 };
 
+// Method to check if subscription is active
+restaurantSchema.methods.isSubscriptionActive = function (): boolean {
+  // Managed accounts are always active (no subscription check)
+  if (this.accountType === 'managed') {
+    return this.status === 'active';
+  }
+
+  // Self-service accounts need valid subscription
+  if (!this.subscription) {
+    return false;
+  }
+
+  const { status, currentPeriodEnd, trialEndsAt } = this.subscription;
+
+  // Check if in trial period
+  if (status === 'trial' && trialEndsAt) {
+    return new Date() < new Date(trialEndsAt);
+  }
+
+  // Check if subscription is active and not expired
+  if (status === 'active' && currentPeriodEnd) {
+    return new Date() < new Date(currentPeriodEnd);
+  }
+
+  return false;
+};
+
+// Method to check if restaurant can customize widget
+restaurantSchema.methods.canCustomizeWidget = function (): boolean {
+  // Only self-service Pro plan can customize
+  if (this.accountType !== 'self-service') {
+    return false;
+  }
+
+  if (!this.subscription || this.subscription.plan !== 'pro') {
+    return false;
+  }
+
+  return this.isSubscriptionActive();
+};
+
+// Method to check if restaurant can create a new reservation (quota check)
+restaurantSchema.methods.canCreateReservation = function (): boolean {
+  // Managed accounts have unlimited reservations
+  if (this.accountType === 'managed') {
+    return true;
+  }
+
+  // Pro plan has unlimited reservations
+  if (this.subscription?.plan === 'pro') {
+    return true;
+  }
+
+  // Starter plan: check monthly quota
+  if (!this.reservationQuota) {
+    // Initialize quota if missing
+    return true;
+  }
+
+  // Check if we need to reset (new month)
+  const now = new Date();
+  const lastReset = new Date(this.reservationQuota.lastResetDate);
+  if (now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear()) {
+    // Will be reset before next check
+    return true;
+  }
+
+  // Check if limit is reached
+  const limit = this.reservationQuota.limit;
+  if (limit === -1) {
+    return true; // Unlimited
+  }
+
+  return this.reservationQuota.monthlyCount < limit;
+};
+
+// Method to increment reservation count
+restaurantSchema.methods.incrementReservationCount = async function (): Promise<void> {
+  // Only track for Starter plan
+  if (this.accountType !== 'self-service' || this.subscription?.plan !== 'starter') {
+    return;
+  }
+
+  if (!this.reservationQuota) {
+    this.reservationQuota = {
+      monthlyCount: 0,
+      lastResetDate: new Date(),
+      limit: 50,
+      emailsSent: { at80: false, at90: false, at100: false },
+    };
+  }
+
+  // Check if we need to reset (new month)
+  const now = new Date();
+  const lastReset = new Date(this.reservationQuota.lastResetDate);
+  if (now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear()) {
+    this.reservationQuota.monthlyCount = 0;
+    this.reservationQuota.lastResetDate = now;
+    // Reset email sent flags
+    this.reservationQuota.emailsSent = { at80: false, at90: false, at100: false };
+  }
+
+  // Increment count
+  this.reservationQuota.monthlyCount += 1;
+
+  // Calculate current quota info
+  const quotaInfo = this.getReservationQuotaInfo();
+
+  // Check thresholds and send notification emails (async, don't block)
+  setImmediate(async () => {
+    try {
+      const { sendQuotaWarningEmail } = await import('../services/emailService');
+
+      if (!this.reservationQuota?.emailsSent) {
+        return;
+      }
+
+      // Send 80% warning
+      if (quotaInfo.percentage >= 80 && !this.reservationQuota.emailsSent.at80) {
+        await sendQuotaWarningEmail(
+          { _id: this._id.toString(), name: this.name, email: this.email },
+          quotaInfo,
+          80
+        );
+        this.reservationQuota.emailsSent.at80 = true;
+        await this.save();
+      }
+
+      // Send 90% warning
+      if (quotaInfo.percentage >= 90 && !this.reservationQuota.emailsSent.at90) {
+        await sendQuotaWarningEmail(
+          { _id: this._id.toString(), name: this.name, email: this.email },
+          quotaInfo,
+          90
+        );
+        this.reservationQuota.emailsSent.at90 = true;
+        await this.save();
+      }
+
+      // Send 100% warning
+      if (quotaInfo.percentage >= 100 && !this.reservationQuota.emailsSent.at100) {
+        await sendQuotaWarningEmail(
+          { _id: this._id.toString(), name: this.name, email: this.email },
+          quotaInfo,
+          100
+        );
+        this.reservationQuota.emailsSent.at100 = true;
+        await this.save();
+      }
+    } catch (error) {
+      // Use dynamic import for logger to avoid circular dependency
+      const { default: logger } = await import('../utils/logger');
+      logger.error('Error sending quota warning email:', error);
+    }
+  });
+
+  await this.save();
+};
+
+// Method to reset monthly reservation count
+restaurantSchema.methods.resetMonthlyReservationCount = async function (): Promise<void> {
+  if (!this.reservationQuota) {
+    return;
+  }
+
+  this.reservationQuota.monthlyCount = 0;
+  this.reservationQuota.lastResetDate = new Date();
+  // Reset email sent flags
+  this.reservationQuota.emailsSent = { at80: false, at90: false, at100: false };
+  await this.save();
+};
+
+// Method to get reservation quota information
+restaurantSchema.methods.getReservationQuotaInfo = function () {
+  // Managed accounts and Pro plan have unlimited
+  if (this.accountType === 'managed' || this.subscription?.plan === 'pro') {
+    return {
+      current: 0,
+      limit: -1,
+      remaining: -1,
+      percentage: 0,
+      isUnlimited: true,
+    };
+  }
+
+  // Starter plan
+  if (!this.reservationQuota) {
+    return {
+      current: 0,
+      limit: 50,
+      remaining: 50,
+      percentage: 0,
+      isUnlimited: false,
+    };
+  }
+
+  const current = this.reservationQuota.monthlyCount || 0;
+  const limit = this.reservationQuota.limit;
+  const remaining = limit === -1 ? -1 : Math.max(0, limit - current);
+  const percentage = limit === -1 ? 0 : Math.min(100, Math.round((current / limit) * 100));
+
+  return {
+    current,
+    limit,
+    remaining,
+    percentage,
+    isUnlimited: limit === -1,
+  };
+};
+
 // Indexes
 restaurantSchema.index({ apiKey: 1 }, { unique: true });
 restaurantSchema.index({ status: 1 });
+restaurantSchema.index({ accountType: 1 });
+restaurantSchema.index({ 'subscription.status': 1 });
+restaurantSchema.index({ 'subscription.stripeCustomerId': 1 });
 
 const Restaurant = mongoose.model<IRestaurant>('Restaurant', restaurantSchema);
 
