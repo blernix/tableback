@@ -26,6 +26,8 @@ dotenv.config();
 
 const app: Application = express();
 
+// Configuration trust proxy pour détection correcte d'IP derrière Nginx
+app.set('trust proxy', true);
 // Stripe webhook endpoint needs raw body (before JSON parsing)
 // This must come BEFORE express.json() middleware
 // Handle webhook directly here to preserve raw body

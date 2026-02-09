@@ -331,9 +331,15 @@ export async function sendReservationNotification(
     data: {
       reservationId: reservation._id?.toString(),
       type: eventType,
-      url: `/reservations/${reservation._id}`,
+      url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/reservations/${reservation._id}`,
     },
     tag: `reservation-${reservation._id}`,
+    ...(eventType === 'reservation_created' && {
+      actions: [
+        { action: 'confirm_reservation', title: 'Valider' },
+        { action: 'cancel_reservation', title: 'Refuser' },
+      ],
+    }),
   };
 
   // Extract restaurantId from reservation

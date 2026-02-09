@@ -177,32 +177,37 @@ export const createReservation = async (req: Request, res: Response): Promise<vo
       // Don't fail the request if SSE fails
     }
 
-    // Send push notification to restaurant users
-    try {
-      const payload = {
-        title: 'Nouvelle réservation',
-        body: `Nouvelle réservation pour ${reservation.customerName} le ${reservation.date.toISOString().split('T')[0]}`,
-        icon: '/icons/icon-192x192.png',
-        badge: '/icons/badge-72x72.png',
-        data: {
-          reservationId: reservation._id.toString(),
-          customerName: reservation.customerName,
-          date: reservation.date.toISOString().split('T')[0],
-          time: reservation.time,
-          numberOfGuests: reservation.numberOfGuests,
-          type: 'reservation_created' as const,
-          url: `/reservations/${reservation._id}`,
-        },
-        tag: `reservation-${reservation._id}`,
-      };
-      await sendPushNotificationToRestaurant(req.user.restaurantId, payload, 'reservation_created');
-    } catch (pushError) {
-      logger.error('Error sending push notification:', pushError);
-      // Don't fail the request if push notification fails
-    }
-
-    // Send email notifications (only if sendEmail is true)
+    // Send push notification and email notifications (only if sendEmail is true)
     if (validatedData.sendEmail !== false) {
+      // Send push notification to restaurant users
+      try {
+        const payload = {
+          title: 'Nouvelle réservation',
+          body: `Nouvelle réservation pour ${reservation.customerName} le ${reservation.date.toISOString().split('T')[0]}`,
+          icon: '/icons/icon-192x192.png',
+          badge: '/icons/badge-72x72.png',
+          data: {
+            reservationId: reservation._id.toString(),
+            customerName: reservation.customerName,
+            date: reservation.date.toISOString().split('T')[0],
+            time: reservation.time,
+            numberOfGuests: reservation.numberOfGuests,
+            type: 'reservation_created' as const,
+            url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/reservations/${reservation._id}`,
+          },
+          tag: `reservation-${reservation._id}`,
+          actions: [
+            { action: 'confirm_reservation', title: 'Valider' },
+            { action: 'cancel_reservation', title: 'Refuser' },
+          ],
+        };
+        await sendPushNotificationToRestaurant(req.user.restaurantId, payload, 'reservation_created');
+      } catch (pushError) {
+        logger.error('Error sending push notification:', pushError);
+        // Don't fail the request if push notification fails
+      }
+
+      // Send email notifications
       try {
         const restaurant = await Restaurant.findById(req.user.restaurantId);
         if (restaurant) {
@@ -357,22 +362,25 @@ export const updateReservation = async (req: Request, res: Response): Promise<vo
           reservation_updated: `La réservation de ${reservation.customerName} a été mise à jour`,
         };
         
-        await sendPushNotificationToRestaurant(
-          req.user.restaurantId,
-          {
-            title: titles[eventType as keyof typeof titles],
-            body: bodies[eventType as keyof typeof bodies],
-            icon: '/icons/icon-192x192.png',
-            badge: '/icons/badge-72x72.png',
-            data: {
-              reservationId: reservation._id.toString(),
-              type: eventType as 'reservation_confirmed' | 'reservation_cancelled' | 'reservation_updated',
-              url: `/reservations/${reservation._id}`,
+        // Send push notification only if sendEmail is not false
+        if (validatedData.sendEmail !== false) {
+          await sendPushNotificationToRestaurant(
+            req.user.restaurantId,
+            {
+              title: titles[eventType as keyof typeof titles],
+              body: bodies[eventType as keyof typeof bodies],
+              icon: '/icons/icon-192x192.png',
+              badge: '/icons/badge-72x72.png',
+              data: {
+                reservationId: reservation._id.toString(),
+                type: eventType as 'reservation_confirmed' | 'reservation_cancelled' | 'reservation_updated',
+                url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/reservations/${reservation._id}`,
+              },
+              tag: `reservation-${reservation._id}`,
             },
-            tag: `reservation-${reservation._id}`,
-          },
-          eventType
-        );
+            eventType
+          );
+        }
 
         // Send SSE event for real-time dashboard updates
         try {
@@ -501,7 +509,7 @@ export const deleteReservation = async (req: Request, res: Response): Promise<vo
           time: reservation.time,
           numberOfGuests: reservation.numberOfGuests,
           type: 'reservation_cancelled' as const,
-          url: `/reservations/${reservation._id}`,
+          url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/reservations/${reservation._id}`,
         },
         tag: `reservation-${reservation._id}`,
       };

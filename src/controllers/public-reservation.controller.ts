@@ -268,9 +268,13 @@ export const createPublicReservation = async (req: Request, res: Response): Prom
           data: {
             reservationId: reservationData._id,
             type: 'reservation_created',
-            url: `/reservations/${reservationData._id}`,
+            url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/reservations/${reservationData._id}`,
           },
           tag: `reservation-${reservationData._id}`,
+          actions: [
+            { action: 'confirm_reservation', title: 'Valider' },
+            { action: 'cancel_reservation', title: 'Refuser' },
+          ],
         },
         'reservation_created'
       );
