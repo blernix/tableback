@@ -50,6 +50,9 @@ router.put('/tables-config', authorizeRole(['restaurant']), restaurantController
 // Reservation Configuration - only accessible to restaurant role
 router.put('/reservation-config', authorizeRole(['restaurant']), restaurantController.updateReservationConfig);
 
+// Contact - accessible to restaurant and server roles
+router.post('/contact', authorizeRole(['restaurant', 'server']), restaurantController.sendContactMessage);
+
 // Closures - only accessible to restaurant role
 router.get('/closures', authorizeRole(['restaurant']), restaurantController.getClosures);
 router.post('/closures', authorizeRole(['restaurant']), restaurantController.createClosure);

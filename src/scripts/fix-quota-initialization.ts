@@ -35,7 +35,7 @@ async function fixQuotaInitialization() {
       restaurant.reservationQuota = {
         monthlyCount: 0,
         lastResetDate: new Date(),
-        limit: plan === 'starter' ? 50 : -1,
+        limit: plan === 'starter' ? 400 : -1,
         emailsSent: {
           at80: false,
           at90: false,
@@ -55,7 +55,7 @@ async function fixQuotaInitialization() {
     const starterCount = await Restaurant.countDocuments({
       accountType: 'self-service',
       'subscription.plan': 'starter',
-      'reservationQuota.limit': 50,
+      'reservationQuota.limit': 400,
     });
 
     const proCount = await Restaurant.countDocuments({
@@ -65,7 +65,7 @@ async function fixQuotaInitialization() {
     });
 
     logger.info(`\nVerification:`);
-    logger.info(`- Starter plans with quota 50: ${starterCount}`);
+    logger.info(`- Starter plans with quota 400: ${starterCount}`);
     logger.info(`- Pro plans with unlimited quota: ${proCount}`);
 
     await mongoose.disconnect();

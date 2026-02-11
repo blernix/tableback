@@ -26,7 +26,6 @@ const createReservationSchema = z.object({
   numberOfGuests: z.number().int().min(1, 'At least 1 guest is required'),
   status: z.enum(['pending', 'confirmed', 'cancelled', 'completed']).optional(),
   notes: z.string().trim().optional(),
-  sendEmail: z.boolean().optional().default(true), // Default to true for backward compatibility
 });
 
 const updateReservationSchema = z.object({
@@ -38,7 +37,6 @@ const updateReservationSchema = z.object({
   numberOfGuests: z.number().int().min(1).optional(),
   status: z.enum(['pending', 'confirmed', 'cancelled', 'completed']).optional(),
   notes: z.string().trim().optional(),
-  sendEmail: z.boolean().optional().default(true), // Default to true for backward compatibility
 });
 
 // Get all reservations for restaurant
@@ -177,78 +175,74 @@ export const createReservation = async (req: Request, res: Response): Promise<vo
       // Don't fail the request if SSE fails
     }
 
-    // Send push notification and email notifications (only if sendEmail is true)
-    if (validatedData.sendEmail !== false) {
-      // Send push notification to restaurant users
-      try {
-        const payload = {
-          title: 'Nouvelle réservation',
-          body: `Nouvelle réservation pour ${reservation.customerName} le ${reservation.date.toISOString().split('T')[0]}`,
-          icon: '/icons/icon-192x192.png',
-          badge: '/icons/badge-72x72.png',
-          data: {
-            reservationId: reservation._id.toString(),
-            customerName: reservation.customerName,
-            date: reservation.date.toISOString().split('T')[0],
-            time: reservation.time,
-            numberOfGuests: reservation.numberOfGuests,
-            type: 'reservation_created' as const,
-            url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/reservations/${reservation._id}`,
-          },
-          tag: `reservation-${reservation._id}`,
-          actions: [
-            { action: 'confirm_reservation', title: 'Valider' },
-            { action: 'cancel_reservation', title: 'Refuser' },
-          ],
+    // Send push notification and email notifications (always send emails for status changes)
+    // Send push notification to restaurant users
+    try {
+      const payload = {
+        title: 'Nouvelle réservation',
+        body: `Nouvelle réservation pour ${reservation.customerName} le ${reservation.date.toISOString().split('T')[0]}`,
+        icon: '/icons/icon-192x192.png',
+        badge: '/icons/badge-72x72.png',
+        data: {
+          reservationId: reservation._id.toString(),
+          customerName: reservation.customerName,
+          date: reservation.date.toISOString().split('T')[0],
+          time: reservation.time,
+          numberOfGuests: reservation.numberOfGuests,
+          type: 'reservation_created' as const,
+          url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/reservations/${reservation._id}`,
+        },
+        tag: `reservation-${reservation._id}`,
+        actions: [
+          { action: 'confirm_reservation', title: 'Valider' },
+          { action: 'cancel_reservation', title: 'Refuser' },
+        ],
+      };
+      await sendPushNotificationToRestaurant(req.user.restaurantId, payload, 'reservation_created');
+    } catch (pushError) {
+      logger.error('Error sending push notification:', pushError);
+      // Don't fail the request if push notification fails
+    }
+
+    // Send email notifications
+    try {
+      const restaurant = await Restaurant.findById(req.user.restaurantId);
+      if (restaurant) {
+        const restaurantData = {
+          _id: restaurant._id.toString(),
+          name: restaurant.name,
+          email: restaurant.email,
+          phone: restaurant.phone,
         };
-        await sendPushNotificationToRestaurant(req.user.restaurantId, payload, 'reservation_created');
-      } catch (pushError) {
-        logger.error('Error sending push notification:', pushError);
-        // Don't fail the request if push notification fails
-      }
 
-      // Send email notifications
-      try {
-        const restaurant = await Restaurant.findById(req.user.restaurantId);
-        if (restaurant) {
-          const restaurantData = {
-            _id: restaurant._id.toString(),
-            name: restaurant.name,
-            email: restaurant.email,
-            phone: restaurant.phone,
-          };
+        const reservationData = {
+          _id: reservation._id.toString(),
+          customerName: reservation.customerName,
+          customerEmail: reservation.customerEmail,
+          customerPhone: reservation.customerPhone || '',
+          date: reservation.date,
+          time: reservation.time,
+          partySize: reservation.numberOfGuests,
+          restaurantId: restaurant._id.toString(),
+          status: reservation.status,
+          notes: reservation.notes || '',
+        };
 
-          const reservationData = {
-            _id: reservation._id.toString(),
-            customerName: reservation.customerName,
-            customerEmail: reservation.customerEmail,
-            customerPhone: reservation.customerPhone || '',
-            date: reservation.date,
-            time: reservation.time,
-            partySize: reservation.numberOfGuests,
-            restaurantId: restaurant._id.toString(),
-            status: reservation.status,
-            notes: reservation.notes || '',
-          };
-
-          // If restaurant creates reservation with confirmed status (phone reservation)
-          if (reservation.status === 'confirmed') {
-            await sendDirectConfirmationEmail(reservationData, restaurantData);
-          } else if (reservation.status === 'pending') {
-            // For pending reservations, send pending email
-            await sendPendingReservationEmail(reservationData, restaurantData);
-          }
-
-          // Restaurant does NOT receive email when they create their own reservations
-          // Only send email to customer
-          logger.info(`Email notifications sent for reservation ${reservation._id}`);
+        // If restaurant creates reservation with confirmed status (phone reservation)
+        if (reservation.status === 'confirmed') {
+          await sendDirectConfirmationEmail(reservationData, restaurantData);
+        } else if (reservation.status === 'pending') {
+          // For pending reservations, send pending email
+          await sendPendingReservationEmail(reservationData, restaurantData);
         }
-      } catch (emailError) {
-        logger.error('Error sending reservation emails:', emailError);
-        // Don't fail the request if email fails
+
+        // Restaurant does NOT receive email when they create their own reservations
+        // Only send email to customer
+        logger.info(`Email notifications sent for reservation ${reservation._id}`);
       }
-    } else {
-      logger.info(`Email sending skipped for reservation ${reservation._id} (sendEmail=false)`);
+    } catch (emailError) {
+      logger.error('Error sending reservation emails:', emailError);
+      // Don't fail the request if email fails
     }
 
     res.status(201).json({ reservation });
@@ -362,25 +356,23 @@ export const updateReservation = async (req: Request, res: Response): Promise<vo
           reservation_updated: `La réservation de ${reservation.customerName} a été mise à jour`,
         };
         
-        // Send push notification only if sendEmail is not false
-        if (validatedData.sendEmail !== false) {
-          await sendPushNotificationToRestaurant(
-            req.user.restaurantId,
-            {
-              title: titles[eventType as keyof typeof titles],
-              body: bodies[eventType as keyof typeof bodies],
-              icon: '/icons/icon-192x192.png',
-              badge: '/icons/badge-72x72.png',
-              data: {
-                reservationId: reservation._id.toString(),
-                type: eventType as 'reservation_confirmed' | 'reservation_cancelled' | 'reservation_updated',
-                url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/reservations/${reservation._id}`,
-              },
-              tag: `reservation-${reservation._id}`,
+        // Send push notification for status changes
+        await sendPushNotificationToRestaurant(
+          req.user.restaurantId,
+          {
+            title: titles[eventType as keyof typeof titles],
+            body: bodies[eventType as keyof typeof bodies],
+            icon: '/icons/icon-192x192.png',
+            badge: '/icons/badge-72x72.png',
+            data: {
+              reservationId: reservation._id.toString(),
+              type: eventType as 'reservation_confirmed' | 'reservation_cancelled' | 'reservation_updated',
+              url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard/reservations/${reservation._id}`,
             },
-            eventType
-          );
-        }
+            tag: `reservation-${reservation._id}`,
+          },
+          eventType
+        );
 
         // Send SSE event for real-time dashboard updates
         try {
@@ -394,8 +386,8 @@ export const updateReservation = async (req: Request, res: Response): Promise<vo
       }
     }
 
-    // Send email notifications for status changes or date/time changes (only if sendEmail is true)
-    if ((validatedData.status || validatedData.date || validatedData.time) && validatedData.sendEmail !== false) {
+    // Send email notifications for status changes or date/time changes (always send emails)
+    if (validatedData.status || validatedData.date || validatedData.time) {
       try {
         const restaurant = await Restaurant.findById(req.user.restaurantId);
         if (restaurant) {
@@ -424,6 +416,7 @@ export const updateReservation = async (req: Request, res: Response): Promise<vo
             await sendConfirmationEmail(reservationData, restaurantData);
           } else if (validatedData.status === 'completed' && reservation.status === 'completed') {
             // If status changed to completed, send review request email (if Google link is set)
+            logger.info(`Sending review request email for reservation ${id}, restaurant has googleReviewLink: ${!!restaurant.googleReviewLink}`);
             const restaurantWithReviewLink = {
               ...restaurantData,
               googleReviewLink: restaurant.googleReviewLink,
@@ -442,8 +435,6 @@ export const updateReservation = async (req: Request, res: Response): Promise<vo
         logger.error('Error sending update emails:', emailError);
         // Don't fail the request if email fails
       }
-    } else if (validatedData.sendEmail === false) {
-      logger.info(`Email sending skipped for reservation update ${id} (sendEmail=false)`);
     }
 
     res.status(200).json({ reservation });

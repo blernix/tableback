@@ -618,7 +618,7 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
     const quotaUsage = starterRestaurants.map(r => ({
       restaurantName: r.name,
       current: r.reservationQuota?.monthlyCount || 0,
-      limit: r.reservationQuota?.limit || 50,
+       limit: r.reservationQuota?.limit || 400,
       percentage: r.getReservationQuotaInfo().percentage
     }));
 
@@ -1534,18 +1534,18 @@ export const manageSubscription = async (req: Request, res: Response): Promise<v
           }
           message = `Plan upgraded to Pro (unlimited reservations)`;
         } else {
-          // Starter plan: 50 reservations/month
+          // Starter plan: 400 reservations/month
           if (!restaurant.reservationQuota) {
             restaurant.reservationQuota = {
               monthlyCount: 0,
               lastResetDate: new Date(),
-              limit: 50,
+              limit: 400,
               emailsSent: { at80: false, at90: false, at100: false },
             };
           } else {
-            restaurant.reservationQuota.limit = 50;
+            restaurant.reservationQuota.limit = 400;
           }
-          message = `Plan changed to Starter (50 reservations/month)`;
+          message = `Plan changed to Starter (400 reservations/month)`;
         }
 
         logger.info(`Admin changed plan for restaurant ${restaurant.name} (${id}) to ${plan}`);
@@ -1634,7 +1634,7 @@ export const manageSubscription = async (req: Request, res: Response): Promise<v
         };
 
         // Set quota based on plan
-        const limit = activatePlan === 'pro' ? -1 : 50;
+        const limit = activatePlan === 'pro' ? -1 : 400;
         restaurant.reservationQuota = {
           monthlyCount: 0,
           lastResetDate: new Date(),

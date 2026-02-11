@@ -23,7 +23,7 @@ export const STRIPE_CONFIG = {
       currency: 'eur',
       interval: 'month' as Stripe.Price.Recurring.Interval,
       features: [
-        '50 réservations par mois',
+        '400 réservations par mois',
         'Widget standard',
         'Gestion horaires et jours fermés',
         'Support par email',

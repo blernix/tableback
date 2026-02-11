@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Votre avis nous intéresse</title>
+  <title>Votre réservation chez {{restaurantName}}</title>
 </head>
 <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-weight: 300; background-color: #FAFAFA; color: #2A2A2A;">
   <!-- Swiss Clean Email Template - TableMaster -->
@@ -26,7 +26,7 @@
                       •
                     </div>
                     <div style="font-size: 20px; font-weight: 400; color: #2A2A2A; margin-top: 16px;">
-                      Votre avis nous intéresse
+                      Merci pour votre visite
                     </div>
                   </td>
                 </tr>
@@ -47,23 +47,46 @@
           <tr>
             <td style="padding: 20px 30px;">
               <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #666666;">
-                Merci d'avoir choisi <strong style="font-weight: 400;">{{restaurantName}}</strong>. Nous espérons que vous avez passé un excellent moment.
+                Nous espérons que vous avez apprécié votre expérience chez <strong style="font-weight: 400;">{{restaurantName}}</strong>. 
+                Votre satisfaction est importante pour nous.
               </p>
 
               <p style="margin: 0 0 32px 0; font-size: 16px; line-height: 1.6; color: #666666;">
-                Votre avis est précieux pour nous et pour nos futurs clients. Pourriez-vous prendre quelques minutes pour laisser un avis sur Google ?
+                Si vous souhaitez partager votre retour d'expérience, vous pouvez laisser un commentaire sur Google.
+                Cela aide également d'autres clients à découvrir ce restaurant.
               </p>
 
-              <!-- Help Section -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; background-color: #FAFAFA; border-left: 2px solid #0066FF;">
+              <!-- Restaurant Contact -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; border: 1px solid #E5E5E5;">
                 <tr>
-                  <td style="padding: 20px;">
-                    <div style="font-size: 14px; font-weight: 400; color: #2A2A2A; margin-bottom: 8px;">
-                      Pourquoi votre avis compte
+                  <td style="padding: 24px;">
+                    <div style="font-size: 16px; font-weight: 400; color: #2A2A2A; margin-bottom: 16px;">
+                      Coordonnées du restaurant
                     </div>
-                    <div style="font-size: 13px; color: #666666; line-height: 1.5;">
-                      Les avis aident les futurs clients à faire leur choix et permettent au restaurant d'améliorer son service.
-                    </div>
+                    
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <div style="font-size: 14px; color: #666666;">
+                            Téléphone
+                          </div>
+                          <div style="font-size: 14px; color: #2A2A2A; font-weight: 400; margin-top: 2px;">
+                            {{restaurantPhone}}
+                          </div>
+                        </td>
+                      </tr>
+                      
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <div style="font-size: 14px; color: #666666;">
+                            Email
+                          </div>
+                          <div style="font-size: 14px; color: #2A2A2A; font-weight: 400; margin-top: 2px;">
+                            {{restaurantEmail}}
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
               </table>
@@ -78,14 +101,14 @@
                 <tr>
                   <td align="center" style="padding: 10px 0;">
                     <a href="{{googleReviewLink}}" style="display: inline-block; background-color: #0066FF; color: #FFFFFF; padding: 16px 40px; text-decoration: none; font-size: 15px; font-weight: 400; border: none;">
-                      Laisser un avis
+                      Laisser un commentaire
                     </a>
                   </td>
                 </tr>
                 <tr>
                   <td align="center" style="padding: 20px 0 0;">
                     <div style="font-size: 13px; color: #999999;">
-                      Cela ne prendra que 2 minutes et nous aidera énormément
+                      Votre retour nous aide à améliorer notre service
                     </div>
                   </td>
                 </tr>
@@ -100,7 +123,7 @@
                 <tr>
                   <td align="center">
                     <div style="font-size: 14px; color: #666666; margin-bottom: 8px;">
-                      TableMaster
+                      <a href="https://tablemaster.fr" style="color: #0066FF; text-decoration: none; font-weight: 400;">TableMaster</a>
                     </div>
                     <div style="font-size: 12px; color: #999999; line-height: 1.5;">
                       La solution professionnelle de gestion de réservations

@@ -14,11 +14,12 @@ export async function createCheckoutSession(params: {
   restaurantId: string;
   plan: 'starter' | 'pro';
   email: string;
+  acceptedTerms?: boolean;
   successUrl?: string;
   cancelUrl?: string;
 }): Promise<Stripe.Checkout.Session> {
   try {
-    const { restaurantId, plan, email, successUrl, cancelUrl } = params;
+    const { restaurantId, plan, email, acceptedTerms, successUrl, cancelUrl } = params;
 
     const priceId = STRIPE_CONFIG.products[plan].priceId;
 
@@ -40,17 +41,19 @@ export async function createCheckoutSession(params: {
       metadata: {
         restaurantId,
         plan,
+        acceptedTerms: acceptedTerms?.toString(),
       },
       subscription_data: {
         metadata: {
           restaurantId,
           plan,
+          acceptedTerms: acceptedTerms?.toString(),
         },
       },
       success_url: successUrl || STRIPE_CONFIG.urls.success,
       cancel_url: cancelUrl || STRIPE_CONFIG.urls.cancel,
       allow_promotion_codes: true,
-    });
+    } as any);
 
     logger.info(`Checkout session created for restaurant ${restaurantId}`, {
       sessionId: session.id,
@@ -170,7 +173,7 @@ async function handleCheckoutCompleted(
       restaurant.reservationQuota = {
         monthlyCount: 0,
         lastResetDate: new Date(),
-        limit: 50,
+      limit: 400,
         emailsSent: {
           at80: false,
           at90: false,
@@ -209,7 +212,7 @@ async function handleCheckoutCompleted(
         // Send subscription confirmation email
         const planName = plan === 'starter' ? 'Starter' : 'Pro';
         const price = plan === 'starter' ? '39€ / mois' : '69€ / mois';
-        const quotaLimit = plan === 'starter' ? 50 : undefined;
+        const quotaLimit = plan === 'starter' ? 400 : undefined;
 
         // Calculate next billing date (30 days from now)
         const nextBilling = new Date();
@@ -284,7 +287,7 @@ async function handleSubscriptionCreated(
     restaurant.reservationQuota = {
       monthlyCount: 0,
       lastResetDate: new Date(),
-      limit: 50,
+      limit: 400,
       emailsSent: {
         at80: false,
         at90: false,
@@ -369,16 +372,16 @@ async function handleSubscriptionUpdated(
   // Update quota limit when plan changes
   if (previousPlan !== newPlan) {
     if (newPlan === 'starter') {
-      // Downgrade to Starter: set limit to 50
+      // Downgrade to Starter: set limit to 400
       if (!restaurant.reservationQuota) {
         restaurant.reservationQuota = {
           monthlyCount: 0,
           lastResetDate: new Date(),
-          limit: 50,
+        limit: 400,
           emailsSent: { at80: false, at90: false, at100: false },
         };
       } else {
-        restaurant.reservationQuota.limit = 50;
+        restaurant.reservationQuota.limit = 400;
       }
     } else if (newPlan === 'pro') {
       // Upgrade to Pro: set limit to unlimited

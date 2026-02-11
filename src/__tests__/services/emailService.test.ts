@@ -71,6 +71,9 @@ describe('EmailService', () => {
       const emailData = mockSendTransacEmail.mock.calls[0][0];
       expect(emailData.htmlContent).toBeDefined();
       expect(typeof emailData.htmlContent).toBe('string');
+      expect(emailData.textContent).toBeDefined();
+      expect(typeof emailData.textContent).toBe('string');
+      expect(emailData.textContent.length).toBeGreaterThan(0);
     });
 
     it('should include sender information', async () => {
@@ -245,7 +248,7 @@ describe('EmailService', () => {
       expect(mockSendTransacEmail).toHaveBeenCalled();
 
       const emailData = mockSendTransacEmail.mock.calls[0][0];
-      expect(emailData.subject).toContain('✅ Réservation confirmée');
+      expect(emailData.subject).toContain('Réservation confirmée');
       expect(emailData.subject).toContain('Le Gourmet');
       expect(emailData.htmlContent).toContain('John Doe');
       expect(emailData.htmlContent).toContain('Le Gourmet');
@@ -290,7 +293,7 @@ describe('EmailService', () => {
       expect(mockSendTransacEmail).toHaveBeenCalled();
 
       const emailData = mockSendTransacEmail.mock.calls[0][0];
-      expect(emailData.subject).toContain('✅ Confirmation de réservation');
+      expect(emailData.subject).toContain('Confirmation de réservation');
       expect(emailData.htmlContent).toContain('Jane Smith');
       expect(emailData.htmlContent).toContain('La Brasserie');
     });

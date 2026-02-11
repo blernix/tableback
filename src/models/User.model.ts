@@ -14,6 +14,9 @@ export interface IUser extends Document {
   twoFactorRecoveryCodes?: string[];
   twoFactorRecoveryIv?: string;
   twoFactorRecoveryAuthTag?: string;
+  acceptedTerms: boolean;
+  acceptedTermsAt: Date;
+  acceptedTermsVersion?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -71,6 +74,18 @@ const userSchema = new Schema<IUser>(
       default: null,
     },
     twoFactorRecoveryAuthTag: {
+      type: String,
+      default: null,
+    },
+    acceptedTerms: {
+      type: Boolean,
+      default: false,
+    },
+    acceptedTermsAt: {
+      type: Date,
+      default: null,
+    },
+    acceptedTermsVersion: {
       type: String,
       default: null,
     },

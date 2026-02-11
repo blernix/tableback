@@ -24,7 +24,7 @@ Guide complet pour configurer Stripe et activer les abonnements self-service.
 1. Aller dans **Produits** → **Ajouter un produit**
 2. Remplir :
    - **Nom** : TableMaster Starter
-    - **Description** : 50 réservations/mois - Widget standard
+    - **Description** : 400 réservations/mois - Widget standard
     - **Prix** : 39 EUR
    - **Facturation** : Récurrente
    - **Période** : Mensuelle

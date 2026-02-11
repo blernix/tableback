@@ -7,6 +7,7 @@ import Dish from '../models/Dish.model';
 import logger from '../utils/logger';
 import { z } from 'zod';
 import { uploadToGCS, deleteFromGCS } from '../config/storage.config';
+import { sendEmail } from '../services/emailService';
 
 // Validation schemas
 const updateBasicInfoSchema = z.object({
@@ -77,6 +78,12 @@ const updateReservationConfigSchema = z.object({
   averagePrice: z.number().min(0, 'Average price must be non-negative').optional(),
 });
 
+const contactMessageSchema = z.object({
+  subject: z.string().min(1, 'Le sujet est requis'),
+  category: z.enum(['question', 'problem', 'other']),
+  message: z.string().min(1, 'Le message est requis').max(5000, 'Le message ne doit pas dépasser 5000 caractères'),
+});
+
 // Get restaurant (for restaurant user)
 export const getMyRestaurant = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -108,6 +115,27 @@ export const updateBasicInfo = async (req: Request, res: Response): Promise<void
     }
 
     const validatedData = updateBasicInfoSchema.parse(req.body);
+
+    // Check if trying to set googleReviewLink without proper plan
+    if (validatedData.googleReviewLink !== undefined && validatedData.googleReviewLink !== '') {
+      const existingRestaurant = await Restaurant.findById(req.user.restaurantId);
+      if (!existingRestaurant) {
+        res.status(404).json({ error: { message: 'Restaurant not found' } });
+        return;
+      }
+
+      // For self-service accounts, only Pro/Enterprise plans can set Google review link
+      if (existingRestaurant.accountType === 'self-service') {
+        const plan = existingRestaurant.subscription?.plan;
+        if (plan === 'starter') {
+          res.status(403).json({
+            error: { message: 'Google review link is only available for Pro plan subscribers and above' }
+          });
+          return;
+        }
+      }
+      // Managed accounts have full access
+    }
 
     const restaurant = await Restaurant.findByIdAndUpdate(
       req.user.restaurantId,
@@ -901,5 +929,95 @@ export const updateWidgetConfig = async (req: Request, res: Response): Promise<v
 
     logger.error('Error updating widget config:', error);
     res.status(500).json({ error: { message: 'Failed to update widget configuration' } });
+  }
+};
+
+/**
+ * Send contact message to TableMaster support
+ */
+export const sendContactMessage = async (req: Request, res: Response): Promise<void> => {
+  try {
+    // Validate request body
+    const validatedData = contactMessageSchema.parse(req.body);
+
+    if (!req.user?.userId || !req.user?.restaurantId) {
+      res.status(400).json({ error: { message: 'User not associated with a restaurant' } });
+      return;
+    }
+
+    // Get restaurant info
+    const restaurant = await Restaurant.findById(req.user.restaurantId).select('name email');
+    if (!restaurant) {
+      res.status(404).json({ error: { message: 'Restaurant not found' } });
+      return;
+    }
+
+    // Get user info (email from req.user)
+    const userEmail = req.user.email;
+    const userName = userEmail.split('@')[0] || 'Utilisateur';
+
+    // Prepare email parameters
+    const categoryLabels = {
+      question: 'Question',
+      problem: 'Problème',
+      other: 'Autre',
+    };
+    const categoryLabel = categoryLabels[validatedData.category] || validatedData.category;
+
+    const emailParams = {
+      restaurantName: restaurant.name,
+      restaurantEmail: restaurant.email || userEmail,
+      userName: userName,
+      userEmail: userEmail,
+      subject: validatedData.subject,
+      category: validatedData.category,
+      categoryLabel: categoryLabel,
+      message: validatedData.message,
+      date: new Date().toLocaleString('fr-FR', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      year: new Date().getFullYear(),
+    };
+
+    // Send email to contact@tablemaster.fr
+    const result = await sendEmail({
+      to: 'contact@tablemaster.fr',
+      toName: 'Équipe TableMaster',
+      subject: `[Contact] ${validatedData.subject} - ${restaurant.name}`,
+      templateName: 'contact-message',
+      params: emailParams,
+    });
+
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to send email');
+    }
+
+    logger.info(`Contact message sent from restaurant: ${restaurant.name} (ID: ${restaurant._id})`);
+
+    res.status(200).json({
+      message: 'Message envoyé avec succès. Nous vous répondrons dans les plus brefs délais.',
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        error: {
+          message: 'Erreur de validation',
+          details: error.errors
+        }
+      });
+      return;
+    }
+
+    logger.error('Error sending contact message:', error);
+    res.status(500).json({ 
+      error: { 
+        message: 'Une erreur est survenue lors de l\'envoi du message. Veuillez réessayer plus tard.' 
+      } 
+    });
   }
 };

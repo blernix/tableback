@@ -1,5 +1,5 @@
 /**
- * Migration script to update existing Starter plan restaurants from limit 100 to 50
+ * Migration script to update existing Starter plan restaurants from limit 100 to 400
  *
  * Run with: npx ts-node src/scripts/update-quota-limits.ts
  */
@@ -22,7 +22,7 @@ async function updateQuotaLimits() {
       $or: [
         { 'reservationQuota.limit': 100 },
         { 'reservationQuota.limit': { $exists: false } },
-        { 'reservationQuota.limit': { $gt: 50 } }, // Catch any limit > 50
+        { 'reservationQuota.limit': { $gt: 400 } }, // Catch any limit > 400
       ],
     });
 
@@ -31,12 +31,12 @@ async function updateQuotaLimits() {
     let updatedCount = 0;
 
     for (const restaurant of restaurants) {
-      // Update limit to 50
+      // Update limit to 400
       if (!restaurant.reservationQuota) {
         restaurant.reservationQuota = {
           monthlyCount: 0,
           lastResetDate: new Date(),
-          limit: 50,
+          limit: 400,
           emailsSent: {
             at80: false,
             at90: false,
@@ -44,13 +44,13 @@ async function updateQuotaLimits() {
           },
         };
       } else {
-        restaurant.reservationQuota.limit = 50;
+        restaurant.reservationQuota.limit = 400;
       }
 
       await restaurant.save();
       updatedCount++;
 
-      logger.info(`Updated quota limit for restaurant: ${restaurant.name} (${restaurant._id}) - New limit: 50`);
+      logger.info(`Updated quota limit for restaurant: ${restaurant.name} (${restaurant._id}) - New limit: 400`);
     }
 
     logger.info(`✅ Successfully updated ${updatedCount} restaurants`);
@@ -59,7 +59,7 @@ async function updateQuotaLimits() {
     const starterWith50 = await Restaurant.countDocuments({
       accountType: 'self-service',
       'subscription.plan': 'starter',
-      'reservationQuota.limit': 50,
+      'reservationQuota.limit': 400,
     });
 
     const starterWith100 = await Restaurant.countDocuments({
@@ -78,7 +78,7 @@ async function updateQuotaLimits() {
     });
 
     logger.info(`\nVerification:`);
-    logger.info(`- Starter plans with limit 50: ${starterWith50}`);
+    logger.info(`- Starter plans with limit 400: ${starterWith50}`);
     logger.info(`- Starter plans with limit 100: ${starterWith100}`);
     logger.info(`- Starter plans without quota: ${starterNoQuota}`);
 

@@ -564,6 +564,9 @@ const signupSchema = z.object({
   // Owner info
   ownerEmail: z.string().email('Invalid email format'),
   ownerPassword: z.string().min(6, 'Password must be at least 6 characters'),
+  acceptedTerms: z.boolean().refine(val => val === true, {
+    message: 'You must accept the terms and conditions',
+  }),
 
   // Plan selection
   plan: z.enum(['starter', 'pro'], {
@@ -631,6 +634,9 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       role: 'restaurant',
       restaurantId: restaurant._id,
       status: 'active',
+      acceptedTerms: validatedData.acceptedTerms,
+      acceptedTermsAt: new Date(),
+      acceptedTermsVersion: '1.0',
     });
 
     await owner.save();
@@ -642,6 +648,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       restaurantId: restaurant._id.toString(),
       plan: validatedData.plan,
       email: validatedData.ownerEmail,
+      acceptedTerms: validatedData.acceptedTerms,
       successUrl: `${process.env.FRONTEND_URL}/signup/success?session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${process.env.FRONTEND_URL}/signup/cancel`,
     });

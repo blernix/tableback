@@ -8,7 +8,7 @@
 ## 🎯 Objectif
 
 Implémenter un système de quota de réservations mensuelles pour les comptes self-service Starter :
-- Limitation à 50 réservations par mois pour le plan Starter
+- Limitation à 400 réservations par mois pour le plan Starter
 - Réservations illimitées pour les plans Pro et comptes managed
 - Compteur automatique avec reset mensuel
 - Affichage du quota dans le dashboard
@@ -112,7 +112,7 @@ restaurantSchema.methods.incrementReservationCount = async function (): Promise<
     this.reservationQuota = {
       monthlyCount: 0,
       lastResetDate: new Date(),
-      limit: 50,
+      limit: 400,
       emailsSent: { at80: false, at90: false, at100: false },
     };
   }
@@ -215,8 +215,8 @@ restaurantSchema.methods.getReservationQuotaInfo = function () {
   if (!this.reservationQuota) {
     return {
       current: 0,
-      limit: 50,
-      remaining: 50,
+      limit: 400,
+      remaining: 400,
       percentage: 0,
       isUnlimited: false,
     };
@@ -971,7 +971,7 @@ Retourne summary { total, success, errors }
    - Message "Vous avez dépassé votre quota de 5%"
 
 7. **Quota Flexible**
-   - Plans personnalisés : 50, 150, 200 réservations/mois
+    - Plans personnalisés : 400, 500, 1000 réservations/mois
    - Champ `customQuotaLimit` dans subscription
 
 ---

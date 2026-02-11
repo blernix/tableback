@@ -140,6 +140,7 @@ async function sendEmail(options: EmailOptions): Promise<EmailResult> {
     };
     sendSmtpEmail.subject = subject;
     sendSmtpEmail.htmlContent = htmlContent;
+    sendSmtpEmail.textContent = generatePlainTextFromHtml(htmlContent);
 
     // Optional reply-to for restaurant emails
     if (replyTo) {
@@ -227,6 +228,58 @@ function escapeHtml(text: string): string {
 }
 
 /**
+ * GENERATE PLAIN TEXT FROM HTML HELPER
+ * Convert HTML email content to plain text for better email client compatibility
+ */
+function generatePlainTextFromHtml(html: string): string {
+  // Remove CSS styles and scripts
+  let text = html.replace(/<style[^>]*>.*?<\/style>/gsi, '');
+  text = text.replace(/<script[^>]*>.*?<\/script>/gsi, '');
+  
+  // Replace common HTML elements with plain text equivalents
+  text = text
+    // Replace line breaks and paragraphs
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/td>/gi, ' ')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/table>/gi, '\n')
+    // Replace list items
+    .replace(/<li>/gi, '• ')
+    .replace(/<\/li>/gi, '\n')
+    // Replace headings
+    .replace(/<h[1-6][^>]*>/gi, '')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
+    // Remove all other HTML tags but keep content
+    .replace(/<[^>]+>/g, '')
+    // Decode HTML entities
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#x2F;/gi, '/')
+    // Collapse multiple whitespace
+    .replace(/\s+/g, ' ')
+    // Trim and clean up line breaks
+    .trim()
+    .replace(/\n\s+\n/g, '\n\n')
+    .replace(/\n{3,}/g, '\n\n');
+  
+  // Extract URLs from anchor tags (basic extraction)
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1: $2');
+  
+  // Ensure reasonable length
+  if (text.length > 10000) {
+    text = text.substring(0, 10000) + '...';
+  }
+  
+  return text;
+}
+
+/**
  * 1. SEND PASSWORD RESET EMAIL
  *
  * Template: password-reset.html
@@ -306,7 +359,7 @@ export async function sendConfirmationEmail(
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
-    subject: `✅ Réservation confirmée - ${restaurant.name}`,
+    subject: `Réservation confirmée - ${restaurant.name}`,
     templateName: 'confirmation',
     params: {
       customerName: reservation.customerName,
@@ -348,7 +401,7 @@ export async function sendDirectConfirmationEmail(
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
-    subject: `✅ Confirmation de réservation - ${restaurant.name}`,
+    subject: `Confirmation de réservation - ${restaurant.name}`,
     templateName: 'direct-confirmation',
     params: {
       customerName: reservation.customerName,
@@ -523,10 +576,11 @@ export async function sendReviewRequestEmail(
     return { success: true, skipped: true };
   }
 
+  logger.info(`Sending review request email to ${reservation.customerEmail} for restaurant ${restaurant.name} with Google review link: ${restaurant.googleReviewLink}`);
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
-    subject: `⭐ Votre avis compte pour nous - ${restaurant.name}`,
+    subject: `Votre réservation chez ${restaurant.name}`,
     templateName: 'review-request',
     params: {
       customerName: reservation.customerName,
@@ -562,45 +616,45 @@ export async function sendQuotaWarningEmail(
 ): Promise<EmailResult> {
   // Define email configuration based on warning level
   const levelConfig = {
-    80: {
-      headerColor: '#f59e0b', // amber
-      headerIcon: '⚠️',
-      headerTitle: 'Quota bientôt atteint',
-      alertBg: '#fffbeb',
+     80: {
+       headerColor: '#f59e0b', // amber
+       headerIcon: '',
+       headerTitle: 'Quota bientôt atteint',
+       alertBg: '#fffbeb',
       alertBorder: '#f59e0b',
       alertColor: '#92400e',
       message: `Vous avez utilisé <strong>${quotaInfo.percentage}%</strong> de votre quota mensuel de réservations. Il vous reste encore <strong>${quotaInfo.remaining} réservations</strong> ce mois.`,
       ctaSection: `<div style="background-color: #dbeafe; padding: 15px; border-radius: 4px; margin-top: 20px;">
         <p style="margin: 0; color: #1e40af; font-size: 14px;">
-          💡 <strong>Astuce :</strong> Passez au plan Pro pour des réservations illimitées et ne plus vous soucier des limites mensuelles.
+           <strong>Astuce :</strong> Passez au plan Pro pour des réservations illimitées et ne plus vous soucier des limites mensuelles.
         </p>
       </div>`,
     },
-    90: {
-      headerColor: '#f97316', // orange
-      headerIcon: '⚠️',
-      headerTitle: 'Attention : Quota presque atteint',
-      alertBg: '#fff7ed',
+     90: {
+       headerColor: '#f97316', // orange
+       headerIcon: '',
+       headerTitle: 'Attention : Quota presque atteint',
+       alertBg: '#fff7ed',
       alertBorder: '#f97316',
       alertColor: '#7c2d12',
       message: `<strong>Attention !</strong> Vous avez utilisé <strong>${quotaInfo.percentage}%</strong> de votre quota mensuel. Il ne vous reste que <strong>${quotaInfo.remaining} réservations</strong> ce mois.`,
       ctaSection: `<div style="background-color: #dbeafe; padding: 15px; border-radius: 4px; margin-top: 20px;">
         <p style="margin: 0; color: #1e40af; font-size: 14px;">
-          🚀 <strong>Recommandé :</strong> Pour éviter les interruptions, passez dès maintenant au plan Pro pour bénéficier de réservations illimitées.
+           <strong>Recommandé :</strong> Pour éviter les interruptions, passez dès maintenant au plan Pro pour bénéficier de réservations illimitées.
         </p>
       </div>`,
     },
-    100: {
-      headerColor: '#dc2626', // red
-      headerIcon: '🚫',
-      headerTitle: 'Quota mensuel atteint',
-      alertBg: '#fef2f2',
+     100: {
+       headerColor: '#dc2626', // red
+       headerIcon: '',
+       headerTitle: 'Quota mensuel atteint',
+       alertBg: '#fef2f2',
       alertBorder: '#dc2626',
       alertColor: '#991b1b',
       message: `<strong>Limite atteinte !</strong> Vous avez atteint votre quota mensuel de <strong>${quotaInfo.limit} réservations</strong>. Vous ne pouvez plus créer de nouvelles réservations ce mois.`,
       ctaSection: `<div style="background-color: #fee2e2; padding: 15px; border-radius: 4px; margin-top: 20px; border: 2px solid #dc2626;">
         <p style="margin: 0; color: #991b1b; font-size: 14px; font-weight: bold;">
-          ⏰ Action requise : Passez au plan Pro immédiatement pour continuer à accepter des réservations.
+           Action requise : Passez au plan Pro immédiatement pour continuer à accepter des réservations.
         </p>
       </div>`,
     },
@@ -653,7 +707,7 @@ export async function sendWelcomeEmail(
   return sendEmail({
     to: user.email,
     toName: user.name || user.email,
-    subject: '🎉 Bienvenue sur TableMaster !',
+    subject: 'Bienvenue sur TableMaster',
     templateName: 'welcome',
     params: {
       userName: user.name || 'Restaurateur',
@@ -696,7 +750,7 @@ export async function sendSubscriptionConfirmedEmail(
   return sendEmail({
     to: user.email,
     toName: user.name || user.email,
-    subject: `✅ Abonnement ${subscriptionInfo.planName} confirmé - TableMaster`,
+    subject: `Abonnement ${subscriptionInfo.planName} confirmé - TableMaster`,
     templateName: 'subscription-confirmed',
     params: {
       userName: user.name || 'Restaurateur',
@@ -730,7 +784,7 @@ export async function sendSubscriptionExtendedEmail(
   return sendEmail({
     to: restaurant.email,
     toName: restaurant.name,
-    subject: `🎁 ${extensionInfo.daysOffered} jour(s) offert(s) sur votre abonnement - TableMaster`,
+    subject: `${extensionInfo.daysOffered} jour(s) offert(s) sur votre abonnement - TableMaster`,
     templateName: 'subscription-extended',
     params: {
       restaurantName: restaurant.name,

@@ -55,7 +55,7 @@ export interface IRestaurant extends Document {
   reservationQuota?: {
     monthlyCount: number;
     lastResetDate: Date;
-    limit: number; // 50 for Starter, unlimited (-1) for Pro and Managed
+    limit: number; // 400 for Starter, unlimited (-1) for Pro and Managed
     emailsSent?: {
       at80: boolean;
       at90: boolean;
@@ -231,7 +231,7 @@ const restaurantSchema = new Schema<IRestaurant>(
       },
       limit: {
         type: Number,
-        default: -1, // -1 means unlimited (Managed and Pro), 50 for Starter
+        default: -1, // -1 means unlimited (Managed and Pro), 400 for Starter
       },
       emailsSent: {
         at80: {
@@ -251,14 +251,14 @@ const restaurantSchema = new Schema<IRestaurant>(
      // Widget customization (Pro plan only)
      widgetConfig: {
        // Form colors (affecte le formulaire de réservation)
-       primaryColor: {
-         type: String,
-         default: '#3B82F6', // Tailwind blue-500
-       },
-       secondaryColor: {
-         type: String,
-         default: '#10B981', // Tailwind green-500
-       },
+        primaryColor: {
+          type: String,
+          default: '#0066FF', // Brand blue
+        },
+        secondaryColor: {
+          type: String,
+          default: '#2A2A2A', // Dark gray text
+        },
        fontFamily: {
          type: String,
          default: 'Inter, system-ui, sans-serif',
@@ -268,10 +268,10 @@ const restaurantSchema = new Schema<IRestaurant>(
          default: '8px',
        },
        // Floating button specific colors (bouton flottant uniquement)
-       buttonBackgroundColor: {
-         type: String,
-         default: '#3B82F6', // Même que primaryColor par défaut
-       },
+        buttonBackgroundColor: {
+          type: String,
+          default: '#0066FF', // Même que primaryColor par défaut
+        },
        buttonTextColor: {
          type: String,
          default: '#FFFFFF', // Blanc par défaut
@@ -496,7 +496,7 @@ restaurantSchema.methods.incrementReservationCount = async function (): Promise<
     this.reservationQuota = {
       monthlyCount: 0,
       lastResetDate: new Date(),
-      limit: 50,
+      limit: 400,
       emailsSent: { at80: false, at90: false, at100: false },
     };
   }
@@ -598,8 +598,8 @@ restaurantSchema.methods.getReservationQuotaInfo = function () {
   if (!this.reservationQuota) {
     return {
       current: 0,
-      limit: 50,
-      remaining: 50,
+      limit: 400,
+      remaining: 400,
       percentage: 0,
       isUnlimited: false,
     };
