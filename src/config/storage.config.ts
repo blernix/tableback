@@ -86,7 +86,7 @@ export const uploadToGCS = async (
     const fileExtension = path.extname(file.originalname);
     const fileName = `${folder}/${crypto.randomBytes(16).toString('hex')}${fileExtension}`;
 
-    console.log(`GCS Upload: Starting upload to ${bucketName}/${fileName}`);
+
 
     const blob = bucket.file(fileName);
     const blobStream = blob.createWriteStream({
@@ -112,7 +112,7 @@ export const uploadToGCS = async (
     blobStream.on('finish', async () => {
       // Get public URL (bucket already has public access configured)
       const publicUrl = `https://storage.googleapis.com/${bucketName}/${fileName}`;
-      console.log(`GCS Upload: Success - ${publicUrl}`);
+
       resolve(publicUrl);
     });
 

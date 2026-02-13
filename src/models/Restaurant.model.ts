@@ -315,7 +315,6 @@ const restaurantSchema = new Schema<IRestaurant>(
           sparse: true, // Allow null values for existing restaurants
           lowercase: true,
           trim: true,
-          index: true,
           validate: {
             validator: function(v: string) {
               if (!v) return true; // Allow empty/null
@@ -620,7 +619,6 @@ restaurantSchema.methods.getReservationQuotaInfo = function () {
 };
 
 // Indexes
-restaurantSchema.index({ apiKey: 1 }, { unique: true });
 restaurantSchema.index({ status: 1 });
 restaurantSchema.index({ accountType: 1 });
 restaurantSchema.index({ 'subscription.status': 1 });

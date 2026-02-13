@@ -16,7 +16,7 @@ export function generateTempToken(userId: string): string {
 export function verifyTempToken(tempToken: string): { userId: string; isValid: boolean } {
   try {
     const decoded = Buffer.from(tempToken, 'base64').toString('utf8');
-    const [userId, timestamp, _unused] = decoded.split(':');
+    const [userId, timestamp] = decoded.split(':');
     const tokenTime = parseInt(timestamp, 10);
     const now = Date.now();
     
@@ -26,7 +26,7 @@ export function verifyTempToken(tempToken: string): { userId: string; isValid: b
     }
     
     return { userId, isValid: !!userId };
-  } catch (_error) {
+  } catch {
     return { userId: '', isValid: false };
   }
 }

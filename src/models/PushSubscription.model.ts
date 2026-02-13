@@ -18,7 +18,6 @@ const pushSubscriptionSchema = new Schema<IPushSubscription>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'User ID is required'],
-      index: true,
     },
     endpoint: {
       type: String,
@@ -47,9 +46,6 @@ const pushSubscriptionSchema = new Schema<IPushSubscription>(
     timestamps: true,
   }
 );
-
-// Compound index for faster queries by userId
-pushSubscriptionSchema.index({ userId: 1, endpoint: 1 });
 
 // Ensure endpoint is unique per user
 pushSubscriptionSchema.index({ userId: 1, endpoint: 1 }, { unique: true });

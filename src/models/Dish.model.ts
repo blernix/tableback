@@ -32,13 +32,11 @@ const dishSchema = new Schema<IDish>(
       type: Schema.Types.ObjectId,
       ref: 'Restaurant',
       required: [true, 'Restaurant ID is required'],
-      index: true,
     },
     categoryId: {
       type: Schema.Types.ObjectId,
       ref: 'MenuCategory',
       required: [true, 'Category ID is required'],
-      index: true,
     },
     name: {
       type: String,

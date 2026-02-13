@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import logger from './utils/logger';
+import * as Sentry from '@sentry/node';
 import healthRoutes from './routes/health.routes';
 import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
@@ -24,7 +25,11 @@ import { handleWebhook } from './controllers/billing.controller';
 // Load environment variables
 dotenv.config();
 
+
+
 const app: Application = express();
+
+
 
 // Configuration trust proxy pour détection correcte d'IP derrière Nginx
 app.set('trust proxy', true);
@@ -160,6 +165,8 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+
+
 // Input sanitization middleware
 app.use(sanitizeRequest);
 
@@ -223,6 +230,16 @@ app.use('/api/2fa', twoFactorRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/public', publicRoutes);
 
+// Debug route for testing Sentry (intentional error)
+app.get('/api/debug-sentry', (_req: Request, _res: Response) => {
+  throw new Error('My first Sentry error from TableMaster backend!');
+});
+
+// Sentry error handler (must be after all controllers and before other error middleware)
+if (process.env.SENTRY_DSN) {
+  Sentry.setupExpressErrorHandler(app);
+}
+
 // 404 handler
 app.use((_req: Request, res: Response) => {
   res.status(404).json({
@@ -231,6 +248,8 @@ app.use((_req: Request, res: Response) => {
     },
   });
 });
+
+
 
 // Error handling middleware
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

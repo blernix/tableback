@@ -30,7 +30,6 @@ const notificationPreferencesSchema = new Schema<INotificationPreferences>(
       ref: 'User',
       required: [true, 'User ID is required'],
       unique: true,
-      index: true,
     },
     // Global toggles
     pushEnabled: {

@@ -14,7 +14,6 @@ const menuCategorySchema = new Schema<IMenuCategory>(
       type: Schema.Types.ObjectId,
       ref: 'Restaurant',
       required: [true, 'Restaurant ID is required'],
-      index: true,
     },
     name: {
       type: String,

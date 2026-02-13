@@ -52,19 +52,16 @@ const notificationAnalyticsSchema = new Schema<INotificationAnalytics>(
       type: Schema.Types.ObjectId,
       ref: 'User',
       required: [true, 'User ID is required'],
-      index: true,
     },
     restaurantId: {
       type: Schema.Types.ObjectId,
       ref: 'Restaurant',
       required: [true, 'Restaurant ID is required'],
-      index: true,
     },
     notificationType: {
       type: String,
       enum: ['push', 'email', 'sse'],
       required: [true, 'Notification type is required'],
-      index: true,
     },
     eventType: {
       type: String,
@@ -78,13 +75,11 @@ const notificationAnalyticsSchema = new Schema<INotificationAnalytics>(
         'system'
       ],
       required: [true, 'Event type is required'],
-      index: true,
     },
     status: {
       type: String,
       enum: ['sent', 'delivered', 'opened', 'clicked', 'failed'],
       required: [true, 'Status is required'],
-      index: true,
     },
     
     // Push notification specific fields

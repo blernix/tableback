@@ -778,21 +778,7 @@ const updateWidgetConfigSchema = z.object({
 
 export const updateWidgetConfig = async (req: Request, res: Response): Promise<void> => {
   try {
-    // DEBUG: Log request details
-    console.log('[DEBUG] === updateWidgetConfig called ===');
-    console.log('[DEBUG] Request body:', JSON.stringify(req.body, null, 2));
-    console.log('[DEBUG] buttonIcon type:', typeof req.body.buttonIcon);
-    console.log('[DEBUG] buttonIcon value:', req.body.buttonIcon);
-    
-    // Log all boolean-like fields
-    Object.keys(req.body).forEach(key => {
-      const value = req.body[key];
-      if (typeof value === 'boolean' || value === 'true' || value === 'false' || typeof value === 'string' && (value.toLowerCase() === 'true' || value.toLowerCase() === 'false')) {
-        console.log(`[DEBUG] ${key}:`, { type: typeof value, value: value });
-      }
-    });
-    
-    console.log('[DEBUG] Content-Type header:', req.headers['content-type']);
+
     
     if (!req.user?.restaurantId) {
       res.status(400).json({ error: { message: 'User not associated with a restaurant' } });

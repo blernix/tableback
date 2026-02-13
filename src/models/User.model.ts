@@ -118,7 +118,6 @@ userSchema.methods.comparePassword = async function (
 };
 
 // Indexes
-userSchema.index({ email: 1 });
 userSchema.index({ restaurantId: 1 });
 
 const User = mongoose.model<IUser>('User', userSchema);

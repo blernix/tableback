@@ -1,3 +1,4 @@
+import './instrument'; // Must be first to initialize Sentry early
 import app from './app';
 import connectDatabase from './config/database';
 import logger from './utils/logger';

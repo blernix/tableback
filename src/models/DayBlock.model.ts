@@ -14,7 +14,6 @@ const dayBlockSchema = new Schema<IDayBlock>(
       type: Schema.Types.ObjectId,
       ref: 'Restaurant',
       required: true,
-      index: true,
     },
     date: {
       type: Date,

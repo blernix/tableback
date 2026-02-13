@@ -29,7 +29,6 @@ const subscriptionHistorySchema = new Schema<ISubscriptionHistory>(
       type: Schema.Types.ObjectId,
       ref: 'Restaurant',
       required: [true, 'Restaurant ID is required'],
-      index: true,
     },
     eventType: {
       type: String,
@@ -59,7 +58,6 @@ const subscriptionHistorySchema = new Schema<ISubscriptionHistory>(
     },
     stripeEventId: {
       type: String,
-      index: true,
     },
     stripeInvoiceId: {
       type: String,

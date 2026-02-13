@@ -96,9 +96,9 @@ export function verifyTwoFactorCode(secret: string, token: string): boolean {
     
     // Also check previous and next windows for debugging
     const now = Date.now();
-    // @ts-ignore
+    // @ts-expect-error
     const prevToken = authenticator.generate(secret, now - 30000); // 30 seconds ago
-    // @ts-ignore
+    // @ts-expect-error
     const nextToken = authenticator.generate(secret, now + 30000); // 30 seconds later
     
     logger.debug(`[2FA] Previous window token: ${prevToken}`);

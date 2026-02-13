@@ -20,7 +20,6 @@ const reservationSchema = new Schema<IReservation>(
       type: Schema.Types.ObjectId,
       ref: 'Restaurant',
       required: [true, 'Restaurant ID is required'],
-      index: true,
     },
     customerName: {
       type: String,
@@ -41,7 +40,6 @@ const reservationSchema = new Schema<IReservation>(
     date: {
       type: Date,
       required: [true, 'Reservation date is required'],
-      index: true,
     },
     time: {
       type: String,
@@ -56,7 +54,6 @@ const reservationSchema = new Schema<IReservation>(
       type: String,
       enum: ['pending', 'confirmed', 'cancelled', 'completed'],
       default: 'pending',
-      index: true,
     },
     notes: {
       type: String,

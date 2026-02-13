@@ -153,7 +153,7 @@ export const initializeSSE = (req: Request, res: Response): void => {
         return;
       }
       res.write(': heartbeat\n\n');
-    } catch (error) {
+    } catch (_error) {
       logger.warn(`Heartbeat failed for client ${client.id}, cleaning up`);
       cleanupClient('heartbeat_error');
     }
@@ -302,9 +302,9 @@ setInterval(() => {
       const connectionAge = now - client.connectedAt.getTime();
       if (connectionAge > MAX_CONNECTION_DURATION) {
         logger.warn(`SSE client ${client.id} exceeded max duration (${connectionAge}ms), force closing`);
-        deadClients.push(client.id);
-      }
-    } catch (error) {
+      deadClients.push(client.id);
+    }
+  } catch (_error) {
       // If we can't check the client, it's probably dead
       deadClients.push(client.id);
     }
@@ -330,7 +330,7 @@ setInterval(() => {
           if (!client.res.writableEnded) {
             client.res.end();
           }
-        } catch (error) {
+    } catch (_error) {
           // Ignore
         }
 
