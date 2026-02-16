@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as restaurantController from '../controllers/restaurant.controller';
 import * as slugManagementController from '../controllers/slug-management.controller';
 import { authenticateToken, authorizeRole } from '../middleware/auth.middleware';
+import { verifyProPlan } from '../middleware/subscription.middleware';
 import { upload } from '../config/storage.config';
 import rateLimit from 'express-rate-limit';
 
@@ -13,8 +14,8 @@ const uploadLimiter = rateLimit({
   max: 10, // 10 uploads per hour
   message: {
     error: {
-      message: 'Too many upload attempts. Please try again later.'
-    }
+      message: 'Too many upload attempts. Please try again later.',
+    },
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -25,33 +26,79 @@ router.use(authenticateToken);
 
 // Restaurant data - accessible to restaurant and server roles
 router.get('/me', authorizeRole(['restaurant', 'server']), restaurantController.getMyRestaurant);
-router.get('/dashboard-stats', authorizeRole(['restaurant', 'server']), restaurantController.getDashboardStats);
+router.get(
+  '/dashboard-stats',
+  authorizeRole(['restaurant', 'server']),
+  restaurantController.getDashboardStats
+);
 
 // Restaurant configuration - only accessible to restaurant role
 router.put('/basic-info', authorizeRole(['restaurant']), restaurantController.updateBasicInfo);
-router.put('/opening-hours', authorizeRole(['restaurant']), restaurantController.updateOpeningHours);
-router.post('/logo', authorizeRole(['restaurant']), uploadLimiter, upload.single('logo'), restaurantController.uploadLogo);
+router.put(
+  '/opening-hours',
+  authorizeRole(['restaurant']),
+  restaurantController.updateOpeningHours
+);
+router.post(
+  '/logo',
+  authorizeRole(['restaurant']),
+  uploadLimiter,
+  upload.single('logo'),
+  restaurantController.uploadLogo
+);
 router.delete('/logo', authorizeRole(['restaurant']), restaurantController.deleteLogo);
 
 // Menu - only accessible to restaurant role
-router.post('/menu/pdf', authorizeRole(['restaurant']), uploadLimiter, upload.single('pdf'), restaurantController.uploadMenuPdf);
+router.post(
+  '/menu/pdf',
+  authorizeRole(['restaurant']),
+  uploadLimiter,
+  upload.single('pdf'),
+  restaurantController.uploadMenuPdf
+);
 router.put('/menu/mode', authorizeRole(['restaurant']), restaurantController.switchMenuMode);
-router.post('/menu/qrcode/generate', authorizeRole(['restaurant']), restaurantController.generateMenuQrCode);
+router.post(
+  '/menu/qrcode/generate',
+  authorizeRole(['restaurant']),
+  restaurantController.generateMenuQrCode
+);
 
 // Widget Configuration - only accessible to restaurant role (Pro plan self-service)
-router.put('/widget-config', authorizeRole(['restaurant']), restaurantController.updateWidgetConfig);
+router.put(
+  '/widget-config',
+  authorizeRole(['restaurant']),
+  verifyProPlan,
+  restaurantController.updateWidgetConfig
+);
 
 // Slug Configuration - only accessible to restaurant role (Pro plan only)
-router.put('/slug', authorizeRole(['restaurant']), slugManagementController.updateRestaurantSlug);
+router.put(
+  '/slug',
+  authorizeRole(['restaurant']),
+  verifyProPlan,
+  slugManagementController.updateRestaurantSlug
+);
 
 // Tables Configuration - only accessible to restaurant role
-router.put('/tables-config', authorizeRole(['restaurant']), restaurantController.updateTablesConfig);
+router.put(
+  '/tables-config',
+  authorizeRole(['restaurant']),
+  restaurantController.updateTablesConfig
+);
 
 // Reservation Configuration - only accessible to restaurant role
-router.put('/reservation-config', authorizeRole(['restaurant']), restaurantController.updateReservationConfig);
+router.put(
+  '/reservation-config',
+  authorizeRole(['restaurant']),
+  restaurantController.updateReservationConfig
+);
 
 // Contact - accessible to restaurant and server roles
-router.post('/contact', authorizeRole(['restaurant', 'server']), restaurantController.sendContactMessage);
+router.post(
+  '/contact',
+  authorizeRole(['restaurant', 'server']),
+  restaurantController.sendContactMessage
+);
 
 // Closures - only accessible to restaurant role
 router.get('/closures', authorizeRole(['restaurant']), restaurantController.getClosures);

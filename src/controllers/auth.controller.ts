@@ -59,7 +59,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     // Validate restaurant role has restaurantId
     if (validatedData.role === 'restaurant' && !validatedData.restaurantId) {
       res.status(400).json({
-        error: { message: 'Restaurant users must be associated with a restaurant' }
+        error: { message: 'Restaurant users must be associated with a restaurant' },
       });
       return;
     }
@@ -88,7 +88,7 @@ export const register = async (req: Request, res: Response): Promise<void> => {
     const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' as 'strict' | 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : ('lax' as 'strict' | 'lax'),
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       path: '/',
     };
@@ -108,8 +108,8 @@ export const register = async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({
         error: {
           message: 'Validation error',
-          details: error.errors
-        }
+          details: error.errors,
+        },
       });
       return;
     }
@@ -148,9 +148,9 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     if (user.twoFactorEnabled) {
       // Generate temporary token for 2FA verification (expires in 5 minutes)
       const tempToken = generateTempToken(user._id.toString());
-      
+
       logger.info(`2FA required for login: ${user.email}`);
-      
+
       res.status(200).json({
         requiresTwoFactor: true,
         tempToken,
@@ -175,7 +175,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' as 'strict' | 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : ('lax' as 'strict' | 'lax'),
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       path: '/',
     };
@@ -196,8 +196,8 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       res.status(400).json({
         error: {
           message: 'Validation error',
-          details: error.errors
-        }
+          details: error.errors,
+        },
       });
       return;
     }
@@ -216,7 +216,7 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
     res.clearCookie('auth_token', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' as 'strict' | 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : ('lax' as 'strict' | 'lax'),
       path: '/',
     });
 
@@ -330,8 +330,8 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
       if (timeSinceExpiration > GRACE_PERIOD_MS) {
         res.status(401).json({
           error: {
-            message: 'Token has expired beyond the refresh grace period. Please login again.'
-          }
+            message: 'Token has expired beyond the refresh grace period. Please login again.',
+          },
         });
         return;
       }
@@ -497,7 +497,9 @@ export const changeEmail = async (req: Request, res: Response): Promise<void> =>
 
     // Check if new email is same as current
     if (user.email === validatedData.newEmail) {
-      res.status(400).json({ error: { message: 'New email must be different from current email' } });
+      res
+        .status(400)
+        .json({ error: { message: 'New email must be different from current email' } });
       return;
     }
 
@@ -521,7 +523,7 @@ export const changeEmail = async (req: Request, res: Response): Promise<void> =>
     const cookieOptions = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax' as 'strict' | 'lax',
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : ('lax' as 'strict' | 'lax'),
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       path: '/',
     };
@@ -564,7 +566,7 @@ const signupSchema = z.object({
   // Owner info
   ownerEmail: z.string().email('Invalid email format'),
   ownerPassword: z.string().min(6, 'Password must be at least 6 characters'),
-  acceptedTerms: z.boolean().refine(val => val === true, {
+  acceptedTerms: z.boolean().refine((val) => val === true, {
     message: 'You must accept the terms and conditions',
   }),
 
@@ -582,7 +584,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     const existingUser = await User.findOne({ email: validatedData.ownerEmail });
     if (existingUser) {
       res.status(409).json({
-        error: { message: 'An account already exists with this email' }
+        error: { message: 'An account already exists with this email' },
       });
       return;
     }
@@ -593,7 +595,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     });
     if (existingRestaurant) {
       res.status(409).json({
-        error: { message: 'A restaurant already exists with this email' }
+        error: { message: 'A restaurant already exists with this email' },
       });
       return;
     }
@@ -689,7 +691,97 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
 
     logger.error('Signup error:', error);
     res.status(500).json({
-      error: { message: 'Failed to create account. Please try again.' }
+      error: { message: 'Failed to create account. Please try again.' },
+    });
+  }
+};
+
+// Resume payment for inactive restaurant
+const resumePaymentSchema = z.object({
+  restaurantEmail: z.string().email('Invalid restaurant email format'),
+  ownerEmail: z.string().email('Invalid owner email format'),
+});
+
+export const resumePayment = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const validatedData = resumePaymentSchema.parse(req.body);
+
+    // Find restaurant by email
+    const restaurant = await Restaurant.findOne({
+      email: validatedData.restaurantEmail,
+      status: 'inactive',
+      accountType: 'self-service',
+    });
+
+    if (!restaurant) {
+      res.status(404).json({
+        error: { message: 'No inactive restaurant found with this email' },
+      });
+      return;
+    }
+
+    // Find owner user
+    const owner = await User.findOne({
+      email: validatedData.ownerEmail,
+      restaurantId: restaurant._id,
+    });
+
+    if (!owner) {
+      res.status(404).json({
+        error: { message: 'No owner found with this email for the restaurant' },
+      });
+      return;
+    }
+
+    // Check if restaurant already has a Stripe customer ID from previous attempt
+    const hasStripeCustomer = !!restaurant.subscription?.stripeCustomerId;
+
+    // Create new checkout session
+    const checkoutSession = await createCheckoutSession({
+      restaurantId: restaurant._id.toString(),
+      plan: restaurant.subscription?.plan || 'starter', // fallback to starter
+      email: validatedData.ownerEmail,
+      acceptedTerms: owner.acceptedTerms,
+      successUrl: `${process.env.FRONTEND_URL}/signup/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${process.env.FRONTEND_URL}/signup/cancel?resume=true&restaurantEmail=${encodeURIComponent(validatedData.restaurantEmail)}&ownerEmail=${encodeURIComponent(validatedData.ownerEmail)}`,
+    });
+
+    logger.info(`Resume payment checkout session created for restaurant ${restaurant._id}`, {
+      sessionId: checkoutSession.id,
+      plan: restaurant.subscription?.plan,
+      hasStripeCustomer,
+    });
+
+    // Return checkout URL
+    res.status(200).json({
+      message: 'Payment session created successfully',
+      restaurant: {
+        id: restaurant._id,
+        name: restaurant.name,
+        email: restaurant.email,
+      },
+      checkout: {
+        sessionId: checkoutSession.id,
+        url: checkoutSession.url,
+      },
+      note: hasStripeCustomer
+        ? 'A previous payment attempt was detected. This new session will update your existing subscription.'
+        : 'This is your first payment attempt.',
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        error: {
+          message: 'Validation error',
+          details: error.errors,
+        },
+      });
+      return;
+    }
+
+    logger.error('Resume payment error:', error);
+    res.status(500).json({
+      error: { message: 'Failed to create payment session. Please try again.' },
     });
   }
 };

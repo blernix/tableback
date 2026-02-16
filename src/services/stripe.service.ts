@@ -30,7 +30,7 @@ export async function createCheckoutSession(params: {
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
-      payment_method_types: ['card'],
+      payment_method_types: ['card', 'link'],
       line_items: [
         {
           price: priceId,
@@ -94,9 +94,7 @@ export async function createPortalSession(params: {
 /**
  * Handle Stripe webhook events
  */
-export async function handleWebhookEvent(
-  event: Stripe.Event
-): Promise<void> {
+export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
   logger.info(`Processing Stripe webhook: ${event.type}`, {
     eventId: event.id,
   });
@@ -127,6 +125,14 @@ export async function handleWebhookEvent(
         await handlePaymentFailed(event.data.object as Stripe.Invoice);
         break;
 
+      case 'setup_intent.setup_failed':
+        await handleSetupIntentFailed(event.data.object as Stripe.SetupIntent);
+        break;
+
+      case 'setup_intent.succeeded':
+        await handleSetupIntentSucceeded(event.data.object as Stripe.SetupIntent);
+        break;
+
       default:
         logger.info(`Unhandled event type: ${event.type}`);
     }
@@ -139,9 +145,7 @@ export async function handleWebhookEvent(
 /**
  * Handle checkout session completed
  */
-async function handleCheckoutCompleted(
-  session: Stripe.Checkout.Session
-): Promise<void> {
+async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<void> {
   const { restaurantId, plan } = session.metadata || {};
 
   if (!restaurantId || !plan) {
@@ -173,7 +177,7 @@ async function handleCheckoutCompleted(
       restaurant.reservationQuota = {
         monthlyCount: 0,
         lastResetDate: new Date(),
-      limit: 400,
+        limit: 400,
         emailsSent: {
           at80: false,
           at90: false,
@@ -247,9 +251,7 @@ async function handleCheckoutCompleted(
 /**
  * Handle subscription created
  */
-async function handleSubscriptionCreated(
-  subscription: Stripe.Subscription
-): Promise<void> {
+async function handleSubscriptionCreated(subscription: Stripe.Subscription): Promise<void> {
   const { restaurantId, plan } = subscription.metadata;
 
   if (!restaurantId) {
@@ -331,9 +333,7 @@ async function handleSubscriptionCreated(
 /**
  * Handle subscription updated
  */
-async function handleSubscriptionUpdated(
-  subscription: Stripe.Subscription
-): Promise<void> {
+async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Promise<void> {
   const { restaurantId } = subscription.metadata;
 
   if (!restaurantId) {
@@ -377,7 +377,7 @@ async function handleSubscriptionUpdated(
         restaurant.reservationQuota = {
           monthlyCount: 0,
           lastResetDate: new Date(),
-        limit: 400,
+          limit: 400,
           emailsSent: { at80: false, at90: false, at100: false },
         };
       } else {
@@ -432,9 +432,7 @@ async function handleSubscriptionUpdated(
 /**
  * Handle subscription deleted
  */
-async function handleSubscriptionDeleted(
-  subscription: Stripe.Subscription
-): Promise<void> {
+async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Promise<void> {
   const { restaurantId } = subscription.metadata;
 
   if (!restaurantId) {
@@ -477,9 +475,7 @@ async function handlePaymentSucceeded(invoice: Stripe.Invoice): Promise<void> {
     return; // Not a subscription invoice
   }
 
-  const subscription = await stripe.subscriptions.retrieve(
-    (invoice as any).subscription as string
-  );
+  const subscription = await stripe.subscriptions.retrieve((invoice as any).subscription as string);
 
   const { restaurantId } = subscription.metadata;
 
@@ -516,9 +512,7 @@ async function handlePaymentFailed(invoice: Stripe.Invoice): Promise<void> {
     return;
   }
 
-  const subscription = await stripe.subscriptions.retrieve(
-    (invoice as any).subscription as string
-  );
+  const subscription = await stripe.subscriptions.retrieve((invoice as any).subscription as string);
 
   const { restaurantId } = subscription.metadata;
 
@@ -563,9 +557,7 @@ async function handlePaymentFailed(invoice: Stripe.Invoice): Promise<void> {
 /**
  * Helper: Determine plan from Stripe subscription
  */
-function determinePlanFromSubscription(
-  subscription: Stripe.Subscription
-): 'starter' | 'pro' {
+function determinePlanFromSubscription(subscription: Stripe.Subscription): 'starter' | 'pro' {
   const priceId = subscription.items.data[0]?.price.id;
 
   if (priceId === STRIPE_CONFIG.products.pro.priceId) {
@@ -602,9 +594,7 @@ function mapStripeStatus(
 /**
  * Get subscription details for a restaurant
  */
-export async function getSubscriptionDetails(
-  restaurantId: string
-): Promise<{
+export async function getSubscriptionDetails(restaurantId: string): Promise<{
   subscription: Stripe.Subscription | null;
   customer: Stripe.Customer | null;
 }> {
@@ -629,6 +619,150 @@ export async function getSubscriptionDetails(
     };
   } catch (error) {
     logger.error('Failed to get subscription details:', error);
+    throw error;
+  }
+}
+
+/**
+ * Update subscription (change plan, extend, activate)
+ */
+export async function updateSubscription(params: {
+  restaurantId: string;
+  action: 'change_plan' | 'extend_subscription' | 'activate';
+  plan?: 'starter' | 'pro';
+  days?: number;
+}): Promise<Stripe.Subscription> {
+  try {
+    const { restaurantId, action, plan, days } = params;
+
+    // Get restaurant
+    const restaurant = await Restaurant.findById(restaurantId);
+    if (!restaurant || !restaurant.subscription?.stripeSubscriptionId) {
+      throw new Error('No active subscription found');
+    }
+
+    const subscriptionId = restaurant.subscription.stripeSubscriptionId;
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    let updateData: Stripe.SubscriptionUpdateParams = {};
+
+    switch (action) {
+      case 'change_plan': {
+        if (!plan) {
+          throw new Error('Plan is required for change_plan action');
+        }
+
+        const priceId = STRIPE_CONFIG.products[plan].priceId;
+        if (!priceId) {
+          throw new Error(`Price ID not configured for plan: ${plan}`);
+        }
+
+        // Update subscription with new price
+        updateData = {
+          items: [
+            {
+              id: subscription.items.data[0].id,
+              price: priceId,
+            },
+          ],
+          metadata: {
+            ...subscription.metadata,
+            plan,
+          },
+          proration_behavior: 'always_invoice',
+        };
+
+        logger.info(`Changing plan for restaurant ${restaurantId}`, {
+          subscriptionId,
+          fromPlan: restaurant.subscription.plan,
+          toPlan: plan,
+          priceId,
+        });
+        break;
+      }
+
+      case 'extend_subscription': {
+        if (!days || days < 1 || days > 365) {
+          throw new Error('Days must be between 1 and 365');
+        }
+
+        // For extension, we only update metadata and ensure subscription is not cancelled
+        // The actual date extension is handled in MongoDB (admin controller)
+        updateData = {
+          cancel_at_period_end: false, // Remove cancellation if present
+          metadata: {
+            ...subscription.metadata,
+            extendedByAdmin: days.toString(),
+            extensionDays: days.toString(),
+          },
+        };
+
+        logger.info(`Extending subscription for restaurant ${restaurantId}`, {
+          subscriptionId,
+          days,
+          note: 'Date extension handled in MongoDB, metadata updated in Stripe',
+        });
+        break;
+      }
+
+      case 'activate': {
+        // Reactivate subscription (remove cancellation at period end)
+        const activatePlan = plan || restaurant.subscription.plan || 'starter';
+
+        updateData = {
+          cancel_at_period_end: false,
+          metadata: {
+            ...subscription.metadata,
+            reactivatedByAdmin: new Date().toISOString(),
+            plan: activatePlan,
+          },
+        };
+
+        // If plan is provided and different from current, also update price
+        if (plan && restaurant.subscription.plan !== plan) {
+          const priceId = STRIPE_CONFIG.products[plan].priceId;
+          if (priceId) {
+            updateData.items = [
+              {
+                id: subscription.items.data[0].id,
+                price: priceId,
+              },
+            ];
+          }
+        }
+
+        logger.info(`Activating subscription for restaurant ${restaurantId}`, {
+          subscriptionId,
+          plan: activatePlan,
+          wasCancelled: (subscription as any).cancel_at_period_end,
+        });
+        break;
+      }
+
+      default:
+        throw new Error(`Unsupported action: ${action}`);
+    }
+
+    // Apply update if we have changes
+    let updatedSubscription = subscription;
+    if (Object.keys(updateData).length > 0) {
+      updatedSubscription = await stripe.subscriptions.update(subscriptionId, updateData);
+    }
+
+    logger.info(`Subscription updated successfully for restaurant ${restaurantId}`, {
+      subscriptionId,
+      action,
+      plan,
+      days,
+    });
+
+    return updatedSubscription;
+  } catch (error) {
+    logger.error(`Failed to update subscription for restaurant ${params.restaurantId}:`, {
+      action: params.action,
+      plan: params.plan,
+      days: params.days,
+      error: (error as any).message,
+    });
     throw error;
   }
 }
@@ -676,4 +810,32 @@ export async function cancelSubscription(params: {
     logger.error('Failed to cancel subscription:', error);
     throw error;
   }
+}
+
+/**
+ * Handle setup intent failed (e.g., 3D Secure authentication failure)
+ */
+async function handleSetupIntentFailed(setupIntent: Stripe.SetupIntent): Promise<void> {
+  logger.warn('Setup intent failed:', {
+    setupIntentId: setupIntent.id,
+    customerId: setupIntent.customer,
+    lastError: setupIntent.last_setup_error,
+    status: setupIntent.status,
+  });
+
+  // Optional: Could send email to user about payment failure
+  // But since checkout wasn't completed, restaurant remains inactive
+  // User will need to retry payment via /signup/cancel page
+}
+
+/**
+ * Handle setup intent succeeded
+ */
+async function handleSetupIntentSucceeded(setupIntent: Stripe.SetupIntent): Promise<void> {
+  logger.info('Setup intent succeeded:', {
+    setupIntentId: setupIntent.id,
+    customerId: setupIntent.customer,
+    paymentMethodId: setupIntent.payment_method,
+    status: setupIntent.status,
+  });
 }

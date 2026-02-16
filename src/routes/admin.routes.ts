@@ -39,12 +39,16 @@ router.get('/export/notifications', adminController.exportNotificationAnalytics)
 
 // Notification analytics
 router.get('/analytics/notifications', adminController.getNotificationAnalytics);
-router.get('/analytics/notifications/restaurant/:restaurantId', adminController.getRestaurantNotificationAnalyticsController);
+router.get(
+  '/analytics/notifications/restaurant/:restaurantId',
+  adminController.getRestaurantNotificationAnalyticsController
+);
 
 // Quota management
 router.post('/quotas/reset-monthly', adminController.resetMonthlyQuotas);
 
 // Subscription management
 router.post('/restaurants/:id/subscription/manage', adminController.manageSubscription);
+router.get('/restaurants/:id/subscription/sync-status', adminController.getSubscriptionSyncStatus);
 
 export default router;

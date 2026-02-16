@@ -4,10 +4,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import brevoConfig from '../config/brevo';
 import logger from '../utils/logger';
-import {
-  generatePasswordResetToken,
-  generateReservationCancelToken,
-} from './tokenService';
+import { generatePasswordResetToken, generateReservationCancelToken } from './tokenService';
 
 // Types
 interface EmailParams {
@@ -233,9 +230,9 @@ function escapeHtml(text: string): string {
  */
 function generatePlainTextFromHtml(html: string): string {
   // Remove CSS styles and scripts
-  let text = html.replace(/<style[^>]*>.*?<\/style>/gsi, '');
-  text = text.replace(/<script[^>]*>.*?<\/script>/gsi, '');
-  
+  let text = html.replace(/<style[^>]*>.*?<\/style>/gis, '');
+  text = text.replace(/<script[^>]*>.*?<\/script>/gis, '');
+
   // Replace common HTML elements with plain text equivalents
   text = text
     // Replace line breaks and paragraphs
@@ -267,15 +264,15 @@ function generatePlainTextFromHtml(html: string): string {
     .trim()
     .replace(/\n\s+\n/g, '\n\n')
     .replace(/\n{3,}/g, '\n\n');
-  
+
   // Extract URLs from anchor tags (basic extraction)
   text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1: $2');
-  
+
   // Ensure reasonable length
   if (text.length > 10000) {
     text = text.substring(0, 10000) + '...';
   }
-  
+
   return text;
 }
 
@@ -287,9 +284,7 @@ function generatePlainTextFromHtml(html: string): string {
  *
  * @param user - User object with email, name, and _id
  */
-export async function sendPasswordResetEmail(
-  user: User & { _id: string }
-): Promise<EmailResult> {
+export async function sendPasswordResetEmail(user: User & { _id: string }): Promise<EmailResult> {
   // Generate JWT token for password reset
   const resetToken = generatePasswordResetToken(user._id);
   const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
@@ -353,7 +348,10 @@ export async function sendConfirmationEmail(
   restaurant: Restaurant
 ): Promise<EmailResult> {
   // Generate JWT token for reservation cancellation
-  const cancellationToken = generateReservationCancelToken(reservation._id, reservation.restaurantId);
+  const cancellationToken = generateReservationCancelToken(
+    reservation._id,
+    reservation.restaurantId
+  );
   const cancellationLink = `${process.env.BACKEND_URL}/api/public/reservations/cancel?token=${cancellationToken}`;
 
   return sendEmail({
@@ -395,7 +393,10 @@ export async function sendDirectConfirmationEmail(
   restaurant: Restaurant
 ): Promise<EmailResult> {
   // Generate JWT token for reservation cancellation
-  const cancellationToken = generateReservationCancelToken(reservation._id, reservation.restaurantId);
+  const cancellationToken = generateReservationCancelToken(
+    reservation._id,
+    reservation.restaurantId
+  );
   const cancellationLink = `${process.env.BACKEND_URL}/api/public/reservations/cancel?token=${cancellationToken}`;
 
   return sendEmail({
@@ -537,7 +538,8 @@ export async function sendReservationUpdateEmail(
     completed: 'Terminée',
   };
 
-  const statusText = statusMap[reservation.status as keyof typeof statusMap] || reservation.status || '';
+  const statusText =
+    statusMap[reservation.status as keyof typeof statusMap] || reservation.status || '';
 
   return sendEmail({
     to: reservation.customerEmail,
@@ -572,11 +574,15 @@ export async function sendReviewRequestEmail(
 ): Promise<EmailResult> {
   // Only send if restaurant has a Google review link
   if (!restaurant.googleReviewLink) {
-    logger.info(`Skipping review request email - no Google review link set for restaurant ${restaurant._id}`);
+    logger.info(
+      `Skipping review request email - no Google review link set for restaurant ${restaurant._id}`
+    );
     return { success: true, skipped: true };
   }
 
-  logger.info(`Sending review request email to ${reservation.customerEmail} for restaurant ${restaurant.name} with Google review link: ${restaurant.googleReviewLink}`);
+  logger.info(
+    `Sending review request email to ${reservation.customerEmail} for restaurant ${restaurant.name} with Google review link: ${restaurant.googleReviewLink}`
+  );
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
@@ -616,11 +622,11 @@ export async function sendQuotaWarningEmail(
 ): Promise<EmailResult> {
   // Define email configuration based on warning level
   const levelConfig = {
-     80: {
-       headerColor: '#f59e0b', // amber
-       headerIcon: '',
-       headerTitle: 'Quota bientôt atteint',
-       alertBg: '#fffbeb',
+    80: {
+      headerColor: '#f59e0b', // amber
+      headerIcon: '',
+      headerTitle: 'Quota bientôt atteint',
+      alertBg: '#fffbeb',
       alertBorder: '#f59e0b',
       alertColor: '#92400e',
       message: `Vous avez utilisé <strong>${quotaInfo.percentage}%</strong> de votre quota mensuel de réservations. Il vous reste encore <strong>${quotaInfo.remaining} réservations</strong> ce mois.`,
@@ -630,11 +636,11 @@ export async function sendQuotaWarningEmail(
         </p>
       </div>`,
     },
-     90: {
-       headerColor: '#f97316', // orange
-       headerIcon: '',
-       headerTitle: 'Attention : Quota presque atteint',
-       alertBg: '#fff7ed',
+    90: {
+      headerColor: '#f97316', // orange
+      headerIcon: '',
+      headerTitle: 'Attention : Quota presque atteint',
+      alertBg: '#fff7ed',
       alertBorder: '#f97316',
       alertColor: '#7c2d12',
       message: `<strong>Attention !</strong> Vous avez utilisé <strong>${quotaInfo.percentage}%</strong> de votre quota mensuel. Il ne vous reste que <strong>${quotaInfo.remaining} réservations</strong> ce mois.`,
@@ -644,11 +650,11 @@ export async function sendQuotaWarningEmail(
         </p>
       </div>`,
     },
-     100: {
-       headerColor: '#dc2626', // red
-       headerIcon: '',
-       headerTitle: 'Quota mensuel atteint',
-       alertBg: '#fef2f2',
+    100: {
+      headerColor: '#dc2626', // red
+      headerIcon: '',
+      headerTitle: 'Quota mensuel atteint',
+      alertBg: '#fef2f2',
       alertBorder: '#dc2626',
       alertColor: '#991b1b',
       message: `<strong>Limite atteinte !</strong> Vous avez atteint votre quota mensuel de <strong>${quotaInfo.limit} réservations</strong>. Vous ne pouvez plus créer de nouvelles réservations ce mois.`,
@@ -792,6 +798,38 @@ export async function sendSubscriptionExtendedEmail(
       previousEndDate: extensionInfo.previousEndDate,
       newEndDate: extensionInfo.newEndDate,
       dashboardLink,
+    },
+  });
+}
+
+/**
+ * Send plan downgrade email (when changing from Pro to Starter)
+ */
+export async function sendPlanDowngradeEmail(
+  restaurant: { name: string; email: string },
+  planInfo: {
+    fromPlan: string;
+    toPlan: string;
+    quotaLimit: string;
+    monthlyPrice: string;
+  }
+): Promise<EmailResult> {
+  const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
+  const upgradeLink = `${process.env.FRONTEND_URL}/dashboard/settings/billing`;
+
+  return sendEmail({
+    to: restaurant.email,
+    toName: restaurant.name,
+    subject: `Votre abonnement TableMaster a été modifié - Changement de plan`,
+    templateName: 'plan-downgrade',
+    params: {
+      restaurantName: restaurant.name,
+      fromPlan: planInfo.fromPlan,
+      toPlan: planInfo.toPlan,
+      quotaLimit: planInfo.quotaLimit,
+      monthlyPrice: planInfo.monthlyPrice,
+      dashboardLink,
+      upgradeLink,
     },
   });
 }

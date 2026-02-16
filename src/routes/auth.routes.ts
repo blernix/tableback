@@ -14,8 +14,8 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true, // ✅ Don't count successful logins (only failed attempts)
   message: {
     error: {
-      message: 'Too many login attempts. Please try again later.'
-    }
+      message: 'Too many login attempts. Please try again later.',
+    },
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -26,8 +26,8 @@ const loginLimiter = rateLimit({
     });
     res.status(429).json({
       error: {
-        message: 'Too many login attempts. Please try again later.'
-      }
+        message: 'Too many login attempts. Please try again later.',
+      },
     });
   },
 });
@@ -38,8 +38,8 @@ const forgotPasswordLimiter = rateLimit({
   max: 5, // 5 requests per hour
   message: {
     error: {
-      message: 'Too many password reset attempts. Please try again later.'
-    }
+      message: 'Too many password reset attempts. Please try again later.',
+    },
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -50,8 +50,8 @@ const forgotPasswordLimiter = rateLimit({
     });
     res.status(429).json({
       error: {
-        message: 'Too many password reset attempts. Please try again later.'
-      }
+        message: 'Too many password reset attempts. Please try again later.',
+      },
     });
   },
 });
@@ -62,8 +62,8 @@ const resetPasswordLimiter = rateLimit({
   max: 10, // 10 attempts per hour (higher than forgot-password since valid tokens are needed)
   message: {
     error: {
-      message: 'Too many password reset attempts. Please try again later.'
-    }
+      message: 'Too many password reset attempts. Please try again later.',
+    },
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -73,8 +73,8 @@ const resetPasswordLimiter = rateLimit({
     });
     res.status(429).json({
       error: {
-        message: 'Too many password reset attempts. Please try again later.'
-      }
+        message: 'Too many password reset attempts. Please try again later.',
+      },
     });
   },
 });
@@ -85,8 +85,8 @@ const registerLimiter = rateLimit({
   max: 5, // 5 requests per hour
   message: {
     error: {
-      message: 'Too many registration attempts. Please try again later.'
-    }
+      message: 'Too many registration attempts. Please try again later.',
+    },
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -97,8 +97,8 @@ const registerLimiter = rateLimit({
     });
     res.status(429).json({
       error: {
-        message: 'Too many registration attempts. Please try again later.'
-      }
+        message: 'Too many registration attempts. Please try again later.',
+      },
     });
   },
 });
@@ -109,8 +109,8 @@ const signupLimiter = rateLimit({
   max: 3, // 3 signups per hour per IP (stricter than register)
   message: {
     error: {
-      message: 'Too many signup attempts. Please try again later.'
-    }
+      message: 'Too many signup attempts. Please try again later.',
+    },
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -122,17 +122,26 @@ const signupLimiter = rateLimit({
     });
     res.status(429).json({
       error: {
-        message: 'Too many signup attempts. Please try again later.'
-      }
+        message: 'Too many signup attempts. Please try again later.',
+      },
     });
   },
 });
 
 // POST /api/auth/register - Register new user (admin only, rate limited)
-router.post('/register', registerLimiter, authenticateToken, authorizeRole(['admin']), authController.register);
+router.post(
+  '/register',
+  registerLimiter,
+  authenticateToken,
+  authorizeRole(['admin']),
+  authController.register
+);
 
 // POST /api/auth/signup - Self-service signup (public, rate limited)
 router.post('/signup', signupLimiter, authController.signup);
+
+// POST /api/auth/resume-payment - Resume payment for inactive restaurant (public, rate limited)
+router.post('/resume-payment', signupLimiter, authController.resumePayment);
 
 // POST /api/auth/login - Login user (rate limited)
 router.post('/login', loginLimiter, authController.login);
@@ -144,7 +153,12 @@ router.post('/refresh', authController.refreshToken);
 router.post('/logout', authenticateToken, authController.logout);
 
 // POST /api/auth/forgot-password - Request password reset email
-router.post('/forgot-password', forgotPasswordLimiter, forgotPasswordEmailRateLimit, authController.forgotPassword);
+router.post(
+  '/forgot-password',
+  forgotPasswordLimiter,
+  forgotPasswordEmailRateLimit,
+  authController.forgotPassword
+);
 
 // POST /api/auth/reset-password - Reset password with token (rate limited to prevent token brute force)
 router.post('/reset-password', resetPasswordLimiter, authController.resetPassword);

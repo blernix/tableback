@@ -51,6 +51,8 @@ export interface IRestaurant extends Document {
     cancelAtPeriodEnd?: boolean;
     trialEndsAt?: Date;
   };
+  // Payment reminder tracking
+  paymentReminderSentAt?: Date;
   // Reservation quota (for Starter plan)
   reservationQuota?: {
     monthlyCount: number;
@@ -117,21 +119,30 @@ export interface IRestaurant extends Document {
   };
 }
 
-const openingSlotSchema = new Schema({
-  start: { type: String, required: true },
-  end: { type: String, required: true },
-}, { _id: false });
+const openingSlotSchema = new Schema(
+  {
+    start: { type: String, required: true },
+    end: { type: String, required: true },
+  },
+  { _id: false }
+);
 
-const dayScheduleSchema = new Schema({
-  closed: { type: Boolean, default: false },
-  slots: { type: [openingSlotSchema], default: [] },
-}, { _id: false });
+const dayScheduleSchema = new Schema(
+  {
+    closed: { type: Boolean, default: false },
+    slots: { type: [openingSlotSchema], default: [] },
+  },
+  { _id: false }
+);
 
-const tableTypeSchema = new Schema({
-  type: { type: String, required: true },
-  quantity: { type: Number, required: true, min: 0 },
-  capacity: { type: Number, required: true, min: 1 },
-}, { _id: false });
+const tableTypeSchema = new Schema(
+  {
+    type: { type: String, required: true },
+    quantity: { type: Number, required: true, min: 0 },
+    capacity: { type: Number, required: true, min: 1 },
+  },
+  { _id: false }
+);
 
 const restaurantSchema = new Schema<IRestaurant>(
   {
@@ -248,84 +259,84 @@ const restaurantSchema = new Schema<IRestaurant>(
         },
       },
     },
-     // Widget customization (Pro plan only)
-     widgetConfig: {
-       // Form colors (affecte le formulaire de réservation)
-        primaryColor: {
-          type: String,
-          default: '#0066FF', // Brand blue
+    // Widget customization (Pro plan only)
+    widgetConfig: {
+      // Form colors (affecte le formulaire de réservation)
+      primaryColor: {
+        type: String,
+        default: '#0066FF', // Brand blue
+      },
+      secondaryColor: {
+        type: String,
+        default: '#2A2A2A', // Dark gray text
+      },
+      fontFamily: {
+        type: String,
+        default: 'Inter, system-ui, sans-serif',
+      },
+      borderRadius: {
+        type: String,
+        default: '8px',
+      },
+      // Floating button specific colors (bouton flottant uniquement)
+      buttonBackgroundColor: {
+        type: String,
+        default: '#0066FF', // Même que primaryColor par défaut
+      },
+      buttonTextColor: {
+        type: String,
+        default: '#FFFFFF', // Blanc par défaut
+      },
+      buttonHoverColor: {
+        type: String,
+        default: '#2563EB', // Bleu plus foncé par défaut
+      },
+      // Floating button general configs
+      buttonText: {
+        type: String,
+        default: 'Réserver une table',
+      },
+      buttonPosition: {
+        type: String,
+        enum: ['bottom-right', 'bottom-left', 'top-right', 'top-left'],
+        default: 'bottom-right',
+      },
+      buttonStyle: {
+        type: String,
+        enum: ['round', 'square', 'minimal'],
+        default: 'round',
+      },
+      buttonIcon: {
+        type: Boolean,
+        default: false, // Désactivé par défaut
+      },
+      modalWidth: {
+        type: String,
+        default: '500px',
+      },
+      modalHeight: {
+        type: String,
+        default: '600px',
+      },
+    },
+    // Vanity URL system - short code + customizable slug
+    publicSlug: {
+      type: String,
+      unique: true,
+      sparse: true, // Allow null values for existing restaurants
+      lowercase: true,
+      trim: true,
+      validate: {
+        validator: function (v: string) {
+          if (!v) return true; // Allow empty/null
+          // Alphanumeric + hyphens, 3-50 characters
+          return /^[a-z0-9-]{3,50}$/.test(v);
         },
-        secondaryColor: {
-          type: String,
-          default: '#2A2A2A', // Dark gray text
-        },
-       fontFamily: {
-         type: String,
-         default: 'Inter, system-ui, sans-serif',
-       },
-       borderRadius: {
-         type: String,
-         default: '8px',
-       },
-       // Floating button specific colors (bouton flottant uniquement)
-        buttonBackgroundColor: {
-          type: String,
-          default: '#0066FF', // Même que primaryColor par défaut
-        },
-       buttonTextColor: {
-         type: String,
-         default: '#FFFFFF', // Blanc par défaut
-       },
-       buttonHoverColor: {
-         type: String,
-         default: '#2563EB', // Bleu plus foncé par défaut
-       },
-       // Floating button general configs
-       buttonText: {
-         type: String,
-         default: 'Réserver une table',
-       },
-        buttonPosition: {
-          type: String,
-          enum: ['bottom-right', 'bottom-left', 'top-right', 'top-left'],
-          default: 'bottom-right',
-        },
-       buttonStyle: {
-         type: String,
-         enum: ['round', 'square', 'minimal'],
-         default: 'round',
-       },
-       buttonIcon: {
-         type: Boolean,
-         default: false, // Désactivé par défaut
-       },
-       modalWidth: {
-         type: String,
-         default: '500px',
-       },
-        modalHeight: {
-          type: String,
-          default: '600px',
-        },
-        },
-        // Vanity URL system - short code + customizable slug
-        publicSlug: {
-          type: String,
-          unique: true,
-          sparse: true, // Allow null values for existing restaurants
-          lowercase: true,
-          trim: true,
-          validate: {
-            validator: function(v: string) {
-              if (!v) return true; // Allow empty/null
-              // Alphanumeric + hyphens, 3-50 characters
-              return /^[a-z0-9-]{3,50}$/.test(v);
-            },
-            message: 'Slug must be 3-50 characters, lowercase alphanumeric and hyphens only'
-          }
-        },
-      menu: {
-       displayMode: {
+        message: 'Slug must be 3-50 characters, lowercase alphanumeric and hyphens only',
+      },
+    },
+    menu: {
+      displayMode: {
         type: String,
         enum: ['pdf', 'detailed', 'both'],
         default: 'detailed',
@@ -392,13 +403,13 @@ restaurantSchema.pre('save', function (next) {
   if (!this.apiKey) {
     this.apiKey = crypto.randomBytes(32).toString('hex');
   }
-  
+
   // Generate a unique slug if not already set
   if (!this.publicSlug) {
     // Generate a random 8-character slug
     this.publicSlug = generateShortCode(8);
   }
-  
+
   next();
 });
 
