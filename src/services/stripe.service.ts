@@ -5,7 +5,11 @@ import SubscriptionHistory from '../models/SubscriptionHistory.model';
 import User from '../models/User.model';
 import logger from '../utils/logger';
 import { Types } from 'mongoose';
-import { sendWelcomeEmail, sendSubscriptionConfirmedEmail } from './emailService';
+import {
+  sendWelcomeEmail,
+  sendSubscriptionConfirmedEmail,
+  sendTrialReminderEmail,
+} from './emailService';
 
 /**
  * Create a Stripe Checkout Session for a new subscription
@@ -44,6 +48,7 @@ export async function createCheckoutSession(params: {
         acceptedTerms: acceptedTerms?.toString(),
       },
       subscription_data: {
+        trial_period_days: 14,
         metadata: {
           restaurantId,
           plan,
@@ -111,6 +116,10 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
 
       case 'customer.subscription.updated':
         await handleSubscriptionUpdated(event.data.object as Stripe.Subscription);
+        break;
+
+      case 'customer.subscription.trial_will_end':
+        await handleTrialWillEnd(event.data.object as Stripe.Subscription);
         break;
 
       case 'customer.subscription.deleted':
@@ -277,6 +286,9 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription): Pro
     currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
     currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
     cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
+    trialEndsAt: (subscription as any).trial_end
+      ? new Date((subscription as any).trial_end * 1000)
+      : undefined,
   };
 
   // Activate restaurant when subscription is active or in trial
@@ -360,6 +372,9 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
     currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
     currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
     cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
+    trialEndsAt: (subscription as any).trial_end
+      ? new Date((subscription as any).trial_end * 1000)
+      : undefined,
   };
 
   // Update restaurant status based on subscription status
@@ -427,6 +442,46 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
     newPlan,
     eventType,
   });
+}
+
+/**
+ * Handle trial will end (7 days before trial ends)
+ */
+async function handleTrialWillEnd(subscription: Stripe.Subscription): Promise<void> {
+  const { restaurantId } = subscription.metadata;
+
+  if (!restaurantId) {
+    logger.error('Missing restaurantId in subscription metadata');
+    return;
+  }
+
+  const restaurant = await Restaurant.findById(restaurantId);
+
+  if (!restaurant) {
+    logger.error(`Restaurant not found: ${restaurantId}`);
+    return;
+  }
+
+  // Get trial end date from subscription
+  const trialEndTimestamp = (subscription as any).trial_end;
+  if (!trialEndTimestamp) {
+    logger.error('No trial end date found in subscription', { subscriptionId: subscription.id });
+    return;
+  }
+
+  const trialEndDate = new Date(trialEndTimestamp * 1000);
+
+  // Send trial reminder email
+  try {
+    await sendTrialReminderEmail({ name: restaurant.name, email: restaurant.email }, trialEndDate);
+    logger.info(`Trial reminder email sent for restaurant ${restaurantId}`, {
+      subscriptionId: subscription.id,
+      trialEndDate,
+    });
+  } catch (error) {
+    logger.error('Failed to send trial reminder email:', error);
+    // Don't throw - webhook should still acknowledge receipt
+  }
 }
 
 /**

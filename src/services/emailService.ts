@@ -834,6 +834,35 @@ export async function sendPlanDowngradeEmail(
   });
 }
 
+/**
+ * Send trial reminder email (7 days before trial ends)
+ */
+export async function sendTrialReminderEmail(
+  restaurant: { name: string; email: string },
+  trialEndDate: Date
+): Promise<EmailResult> {
+  const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
+  const billingLink = `${process.env.FRONTEND_URL}/dashboard/settings/billing`;
+  const trialEndFormatted = trialEndDate.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  return sendEmail({
+    to: restaurant.email,
+    toName: restaurant.name,
+    subject: `Votre essai gratuit TableMaster se termine bientôt`,
+    templateName: 'trial-reminder',
+    params: {
+      restaurantName: restaurant.name,
+      trialEndDate: trialEndFormatted,
+      dashboardLink,
+      billingLink,
+    },
+  });
+}
+
 // Export sendEmail for testing purposes
 export { sendEmail };
 
