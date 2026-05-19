@@ -51,4 +51,8 @@ router.post('/quotas/reset-monthly', adminController.resetMonthlyQuotas);
 router.post('/restaurants/:id/subscription/manage', adminController.manageSubscription);
 router.get('/restaurants/:id/subscription/sync-status', adminController.getSubscriptionSyncStatus);
 
+// Commercial user management
+router.get('/commercials', adminController.getCommercialUsers);
+router.post('/commercials', adminController.createCommercialUser);
+
 export default router;

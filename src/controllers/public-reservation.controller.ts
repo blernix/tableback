@@ -12,9 +12,12 @@ import {
   sendRestaurantNotificationEmail,
 } from '../services/emailService';
 import { sendPushNotificationToRestaurant } from '../services/pushNotificationService';
+import NotificationPreferences from '../models/NotificationPreferences.model';
+import User from '../models/User.model';
 import { emitToRestaurant, createReservationEvent } from '../services/sseService';
 import { fromZonedTime, toZonedTime, format } from 'date-fns-tz';
 import { sanitizeReservationInput } from '../utils/sanitize';
+import { applyWidgetDefaults } from '../config/widgetDefaults';
 
 // Validation schema for public reservation creation with enhanced security
 const createPublicReservationSchema = z
@@ -86,8 +89,10 @@ const createPublicReservationSchema = z
       .default(''),
     // Honeypot field for bot detection (should be empty)
     _honeypot: z.string().max(0, 'Invalid request').optional().default(''),
+    consentMarketing: z.boolean().optional().default(false),
+    consentDataProcessing: z.boolean().optional().default(false),
   })
-  .strict(); // Reject any additional fields not in the schema
+  .strict();
 
 // Create a reservation (public endpoint)
 export const createPublicReservation = async (req: Request, res: Response): Promise<void> => {
@@ -204,6 +209,8 @@ export const createPublicReservation = async (req: Request, res: Response): Prom
       numberOfGuests: validatedData.numberOfGuests,
       status: 'pending',
       notes: validatedData.notes || '',
+      consentMarketing: validatedData.consentMarketing,
+      consentDataProcessing: validatedData.consentDataProcessing,
     });
 
     await reservation.save();
@@ -254,8 +261,22 @@ export const createPublicReservation = async (req: Request, res: Response): Prom
 
       await sendPendingReservationEmail(reservationData, restaurantData);
 
-      // Send notification to restaurant
-      await sendRestaurantNotificationEmail(reservationData, restaurantData, 'created');
+      // Send email notification to restaurant (only if a user enabled email)
+      try {
+        const restaurantUsers = await User.find({ restaurantId: restaurant._id, status: 'active' }).select('_id').lean();
+        const userIds = restaurantUsers.map((u) => u._id);
+        const prefs = await NotificationPreferences.find({ userId: { $in: userIds } }).lean();
+        const wantsEmail = prefs.some((p) => {
+          if (!p.emailEnabled) return false;
+          return p.reservationCreated !== false;
+        });
+        if (wantsEmail) {
+          await sendRestaurantNotificationEmail(reservationData, restaurantData, 'created');
+        }
+      } catch {
+        // Fallback: send email if preferences check fails
+        await sendRestaurantNotificationEmail(reservationData, restaurantData, 'created');
+      }
       
       // Send push notification to restaurant users
       await sendPushNotificationToRestaurant(
@@ -469,29 +490,22 @@ export const getAvailableTimeSlots = async (req: Request, res: Response): Promis
       return;
     }
 
-    // Generate time slots based on opening hours
+    // Generate time slots based on opening hours (15-min intervals, validated by service duration)
     const slots: string[] = [];
+    const serviceDuration = restaurant.reservationConfig.defaultDuration;
 
     for (const period of daySchedule.slots) {
       const [startHour, startMinute] = period.start.split(':').map(Number);
       const [endHour, endMinute] = period.end.split(':').map(Number);
 
-      let currentHour = startHour;
-      let currentMinute = startMinute;
+      const startTotal = startHour * 60 + startMinute;
+      const endTotal = endHour * 60 + endMinute;
 
-      while (
-        currentHour < endHour ||
-        (currentHour === endHour && currentMinute <= endMinute - restaurant.reservationConfig.defaultDuration)
-      ) {
-        const timeSlot = `${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
-        slots.push(timeSlot);
-
-        // Increment by 30 minutes
-        currentMinute += 30;
-        if (currentMinute >= 60) {
-          currentHour += 1;
-          currentMinute -= 60;
-        }
+      // 15-minute intervals — slot is valid only if a full service fits before closing
+      for (let current = startTotal; current + serviceDuration <= endTotal; current += 15) {
+        const h = Math.floor(current / 60);
+        const m = current % 60;
+        slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
       }
     }
 
@@ -502,6 +516,16 @@ export const getAvailableTimeSlots = async (req: Request, res: Response): Promis
       status: { $nin: ['cancelled'] },
     }).select('time numberOfGuests');
 
+    // Build guest count per slot
+    const guestCountBySlot: Record<string, number> = {};
+    existingReservations.forEach((r) => {
+      guestCountBySlot[r.time] = (guestCountBySlot[r.time] || 0) + r.numberOfGuests;
+    });
+
+    const maxCapacity = restaurant.tablesConfig?.totalTables && restaurant.tablesConfig?.averageCapacity
+      ? restaurant.tablesConfig.totalTables * restaurant.tablesConfig.averageCapacity
+      : 50;
+
     res.json({
       available: true,
       slots,
@@ -509,10 +533,13 @@ export const getAvailableTimeSlots = async (req: Request, res: Response): Promis
         time: r.time,
         numberOfGuests: r.numberOfGuests,
       })),
+      guestsBySlot: guestCountBySlot,
+      maxCapacityPerSlot: maxCapacity,
       config: {
         defaultDuration: restaurant.reservationConfig.defaultDuration,
-        totalTables: restaurant.tablesConfig.totalTables,
-        averageCapacity: restaurant.tablesConfig.averageCapacity,
+        maxCapacityPerSlot: maxCapacity,
+        totalTables: restaurant.tablesConfig?.totalTables || 0,
+        averageCapacity: restaurant.tablesConfig?.averageCapacity || 0,
       },
     });
   } catch (error) {
@@ -538,12 +565,7 @@ export const getRestaurantInfo = async (req: Request, res: Response): Promise<vo
           totalTables: restaurant.tablesConfig.totalTables,
           averageCapacity: restaurant.tablesConfig.averageCapacity,
         },
-        widgetConfig: restaurant.widgetConfig || {
-          primaryColor: '#0066FF',
-          secondaryColor: '#2A2A2A',
-          fontFamily: 'system-ui, sans-serif',
-          borderRadius: '4px',
-        },
+        widgetConfig: applyWidgetDefaults(restaurant.widgetConfig),
       },
     });
   } catch (error) {
@@ -558,26 +580,7 @@ export const getWidgetConfig = async (req: Request, res: Response): Promise<void
     const restaurant = req.restaurant!;
 
     res.json({
-      widgetConfig: {
-        // Form colors (affecte le formulaire)
-        primaryColor: restaurant.widgetConfig?.primaryColor || '#0066FF',
-        secondaryColor: restaurant.widgetConfig?.secondaryColor || '#2A2A2A',
-        fontFamily: restaurant.widgetConfig?.fontFamily || 'system-ui, sans-serif',
-        borderRadius: restaurant.widgetConfig?.borderRadius || '4px',
-        
-        // Button specific colors (bouton flottant uniquement)
-        buttonBackgroundColor: restaurant.widgetConfig?.buttonBackgroundColor || restaurant.widgetConfig?.primaryColor || '#0066FF',
-        buttonTextColor: restaurant.widgetConfig?.buttonTextColor || '#FFFFFF',
-        buttonHoverColor: restaurant.widgetConfig?.buttonHoverColor || '#0052CC',
-        
-        // Floating button general configs
-        buttonText: restaurant.widgetConfig?.buttonText || 'Réserver une table',
-        buttonStyle: restaurant.widgetConfig?.buttonStyle || 'round',
-        buttonPosition: restaurant.widgetConfig?.buttonPosition || 'bottom-right',
-        buttonIcon: restaurant.widgetConfig?.buttonIcon !== false, // default false now
-        modalWidth: restaurant.widgetConfig?.modalWidth || '500px',
-        modalHeight: restaurant.widgetConfig?.modalHeight || '600px',
-      },
+      widgetConfig: applyWidgetDefaults(restaurant.widgetConfig),
     });
   } catch (error) {
     logger.error('Error getting widget config:', error);
@@ -688,8 +691,21 @@ export const cancelReservation = async (req: Request, res: Response): Promise<vo
 
       await sendCancellationConfirmationEmail(reservationData, restaurantData);
       
-      // Send notification to restaurant (added per user request)
-      await sendRestaurantNotificationEmail(reservationData, restaurantData, 'cancelled');
+      // Send email notification to restaurant (only if a user enabled email)
+      try {
+        const restaurantUsers = await User.find({ restaurantId: restaurant._id, status: 'active' }).select('_id').lean();
+        const userIds = restaurantUsers.map((u) => u._id);
+        const prefs = await NotificationPreferences.find({ userId: { $in: userIds } }).lean();
+        const wantsEmail = prefs.some((p) => {
+          if (!p.emailEnabled) return false;
+          return p.reservationCancelled !== false;
+        });
+        if (wantsEmail) {
+          await sendRestaurantNotificationEmail(reservationData, restaurantData, 'cancelled');
+        }
+      } catch {
+        await sendRestaurantNotificationEmail(reservationData, restaurantData, 'cancelled');
+      }
     } catch (emailError) {
       logger.error('Error sending cancellation confirmation email:', emailError);
       // Don't fail the cancellation if email fails

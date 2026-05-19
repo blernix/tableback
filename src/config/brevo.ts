@@ -29,7 +29,7 @@ interface BrevoConfig {
 
 const brevoConfig: BrevoConfig = {
   apiKey: process.env.BREVO_API_KEY,
-  senderEmail: process.env.EMAIL_SENDER || 'reservation@mastertable.fr',
+  senderEmail: process.env.EMAIL_SENDER || 'contact@tablemaster.fr',
   senderName: 'TableMaster',
 
   // Template IDs (will be filled in Story 1.2)

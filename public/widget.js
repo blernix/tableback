@@ -29,24 +29,21 @@
     return;
   }
 
-  // Configuration
+  // Configuration — values will be overridden by API response
   const config = {
-    apiKey: slug || apiKey, // Use slug if provided, otherwise API key
+    apiKey: slug || apiKey,
     frontendUrl: currentScript.getAttribute('data-frontend-url') || 'http://localhost:3000',
-    // Support both API key and slug systems
     useSlug: useSlug,
-    // New configuration options for floating button - now with defaults that will be overridden by API
     position: currentScript.getAttribute('data-position') || 'bottom-right',
     buttonText: currentScript.getAttribute('data-button-text') || 'Réserver une table',
-    buttonIcon: currentScript.getAttribute('data-button-icon') !== 'false', // Show icon by default
+    buttonIcon: currentScript.getAttribute('data-button-icon') !== 'false',
     modalWidth: currentScript.getAttribute('data-modal-width') || '500px',
     modalHeight: currentScript.getAttribute('data-modal-height') || '600px',
     primaryColor: currentScript.getAttribute('data-primary-color') || '#0066FF',
-    buttonStyle: currentScript.getAttribute('data-button-style') || 'round', // round, square, minimal
-    // Configuration from dashboard - will be fetched via API
+    buttonStyle: currentScript.getAttribute('data-button-style') || 'round',
     secondaryColor: currentScript.getAttribute('data-secondary-color') || '#2A2A2A',
     fontFamily: currentScript.getAttribute('data-font-family') || 'system-ui, sans-serif',
-    borderRadius: currentScript.getAttribute('data-border-radius') || '4px',
+    borderRadius: currentScript.getAttribute('data-border-radius') || '8px',
   };
 
   // Wait for DOM to be ready

@@ -85,6 +85,7 @@ export interface IRestaurant extends Document {
   };
   // Vanity URL system
   publicSlug?: string; // Short code or custom slug for pretty URLs
+  createdBy?: mongoose.Types.ObjectId;
   menu: {
     displayMode: 'pdf' | 'detailed' | 'both';
     pdfUrl?: string;
@@ -334,6 +335,12 @@ const restaurantSchema = new Schema<IRestaurant>(
         },
         message: 'Slug must be 3-50 characters, lowercase alphanumeric and hyphens only',
       },
+    },
+    // Track which commercial created this restaurant
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
     },
     menu: {
       displayMode: {
@@ -634,6 +641,7 @@ restaurantSchema.index({ status: 1 });
 restaurantSchema.index({ accountType: 1 });
 restaurantSchema.index({ 'subscription.status': 1 });
 restaurantSchema.index({ 'subscription.stripeCustomerId': 1 });
+restaurantSchema.index({ accountType: 1, 'subscription.plan': 1, 'subscription.status': 1 });
 
 const Restaurant = mongoose.model<IRestaurant>('Restaurant', restaurantSchema);
 

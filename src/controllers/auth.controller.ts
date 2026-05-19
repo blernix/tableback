@@ -16,7 +16,7 @@ import { generateShortCode } from '../utils/slugGenerator';
 const registerSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  role: z.enum(['admin', 'restaurant']),
+  role: z.enum(['admin', 'restaurant', 'commercial']),
   restaurantId: z.string().optional(),
 });
 
@@ -311,7 +311,7 @@ export const refreshToken = async (req: Request, res: Response): Promise<void> =
       decoded = jwt.verify(token, jwtSecret, { ignoreExpiration: true }) as {
         userId: string;
         email: string;
-        role: 'admin' | 'restaurant' | 'server';
+        role: 'admin' | 'restaurant' | 'server' | 'commercial';
         restaurantId?: string;
         exp?: number;
       };
@@ -635,7 +635,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       password: validatedData.ownerPassword,
       role: 'restaurant',
       restaurantId: restaurant._id,
-      status: 'active',
+      status: 'inactive', // Activated after Stripe payment confirmed via webhook
       acceptedTerms: validatedData.acceptedTerms,
       acceptedTermsAt: new Date(),
       acceptedTermsVersion: '1.0',

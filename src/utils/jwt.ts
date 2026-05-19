@@ -4,7 +4,7 @@ import { Types } from 'mongoose';
 interface TokenPayload {
   userId: Types.ObjectId;
   email: string;
-  role: 'admin' | 'restaurant' | 'server';
+  role: 'admin' | 'restaurant' | 'server' | 'commercial';
   restaurantId?: Types.ObjectId;
 }
 

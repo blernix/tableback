@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 
 import logger from '../utils/logger';
+import { applyWidgetDefaults } from '../config/widgetDefaults';
 
 /**
  * Controller pour les routes de type "vanity URL" avec slugs
@@ -12,24 +13,7 @@ export const getEmbedBySlug = async (req: Request, res: Response): Promise<void>
   try {
     const restaurant = req.restaurant!;
     
-    // Récupérer la configuration widget
-    const widgetConfig = restaurant.widgetConfig || {
-      primaryColor: '#0066FF',
-      secondaryColor: '#2A2A2A',
-      fontFamily: 'system-ui, sans-serif',
-      borderRadius: '4px',
-      // Button specific colors
-      buttonBackgroundColor: (restaurant.widgetConfig as any)?.primaryColor || '#0066FF',
-      buttonTextColor: '#FFFFFF',
-      buttonHoverColor: '#0052EB',
-      // Floating button configs
-      buttonText: (restaurant.widgetConfig as any)?.buttonText || 'Réserver une table',
-      buttonPosition: (restaurant.widgetConfig as any)?.buttonPosition || 'bottom-right',
-      buttonStyle: (restaurant.widgetConfig as any)?.buttonStyle || 'round',
-      buttonIcon: (restaurant.widgetConfig as any)?.buttonIcon !== false,
-      modalWidth: (restaurant.widgetConfig as any)?.modalWidth || '500px',
-      modalHeight: (restaurant.widgetConfig as any)?.modalHeight || '600px',
-    };
+    const widgetConfig = applyWidgetDefaults(restaurant.widgetConfig);
 
     res.json({
       restaurant: {
@@ -40,7 +24,7 @@ export const getEmbedBySlug = async (req: Request, res: Response): Promise<void>
         openingHours: restaurant.openingHours,
         reservationConfig: restaurant.reservationConfig,
         tablesConfig: restaurant.tablesConfig,
-        widgetConfig: widgetConfig,
+        widgetConfig,
       },
     });
   } catch (error) {
@@ -68,23 +52,7 @@ export const getRestaurantInfoBySlug = async (req: Request, res: Response): Prom
           totalTables: restaurant.tablesConfig.totalTables,
           averageCapacity: restaurant.tablesConfig.averageCapacity,
         },
-        widgetConfig: restaurant.widgetConfig || {
-          primaryColor: '#0066FF',
-          secondaryColor: '#2A2A2A',
-          fontFamily: 'system-ui, sans-serif',
-          borderRadius: '4px',
-          // Button specific colors
-      buttonBackgroundColor: (restaurant.widgetConfig as any)?.primaryColor || '#0066FF',
-          buttonTextColor: '#FFFFFF',
-          buttonHoverColor: '#0052EB',
-          // Floating button configs
-      buttonText: (restaurant.widgetConfig as any)?.buttonText || 'Réserver une table',
-      buttonPosition: (restaurant.widgetConfig as any)?.buttonPosition || 'bottom-right',
-      buttonStyle: (restaurant.widgetConfig as any)?.buttonStyle || 'round',
-      buttonIcon: (restaurant.widgetConfig as any)?.buttonIcon !== false,
-      modalWidth: (restaurant.widgetConfig as any)?.modalWidth || '500px',
-      modalHeight: (restaurant.widgetConfig as any)?.modalHeight || '600px',
-        },
+        widgetConfig: applyWidgetDefaults(restaurant.widgetConfig),
       },
     });
   } catch (error) {

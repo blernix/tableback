@@ -10,6 +10,10 @@ export interface IReservation extends Document {
   numberOfGuests: number;
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
   notes?: string;
+  reminderSent: boolean;
+  reminderSentAt?: Date;
+  consentMarketing: boolean;
+  consentDataProcessing: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -60,6 +64,22 @@ const reservationSchema = new Schema<IReservation>(
       trim: true,
       default: '',
     },
+    reminderSent: {
+      type: Boolean,
+      default: false,
+    },
+    reminderSentAt: {
+      type: Date,
+      default: null,
+    },
+    consentMarketing: {
+      type: Boolean,
+      default: false,
+    },
+    consentDataProcessing: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -70,6 +90,9 @@ const reservationSchema = new Schema<IReservation>(
 reservationSchema.index({ restaurantId: 1, date: 1 });
 reservationSchema.index({ restaurantId: 1, status: 1 });
 reservationSchema.index({ restaurantId: 1, date: 1, status: 1 });
+reservationSchema.index({ createdAt: 1, status: 1 });
+reservationSchema.index({ restaurantId: 1, customerEmail: 1 });
+reservationSchema.index({ reminderSent: 1, status: 1, date: 1 });
 
 const Reservation = mongoose.model<IReservation>('Reservation', reservationSchema);
 

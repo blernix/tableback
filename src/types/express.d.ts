@@ -6,7 +6,7 @@ declare global {
       user?: {
         userId: Types.ObjectId;
         email: string;
-        role: 'admin' | 'restaurant' | 'server';
+        role: 'admin' | 'restaurant' | 'server' | 'commercial';
         restaurantId?: Types.ObjectId;
       };
     }

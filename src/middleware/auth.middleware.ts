@@ -6,7 +6,7 @@ import logger from '../utils/logger';
 interface JwtPayload {
   userId: string;
   email: string;
-  role: 'admin' | 'restaurant' | 'server';
+  role: 'admin' | 'restaurant' | 'server' | 'commercial';
   restaurantId?: string;
 }
 
@@ -107,7 +107,7 @@ export const authenticateFlexible = (req: Request, res: Response, next: NextFunc
 };
 
 // Authorize by role
-export const authorizeRole = (allowedRoles: Array<'admin' | 'restaurant' | 'server'>) => {
+export const authorizeRole = (allowedRoles: Array<'admin' | 'restaurant' | 'server' | 'commercial'>) => {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
       res.status(401).json({ error: { message: 'User not authenticated' } });

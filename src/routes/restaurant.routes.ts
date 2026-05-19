@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as restaurantController from '../controllers/restaurant.controller';
 import * as slugManagementController from '../controllers/slug-management.controller';
+import * as customerController from '../controllers/customer.controller';
 import { authenticateToken, authorizeRole } from '../middleware/auth.middleware';
 import { verifyProPlan } from '../middleware/subscription.middleware';
 import { upload } from '../config/storage.config';
@@ -104,5 +105,13 @@ router.post(
 router.get('/closures', authorizeRole(['restaurant']), restaurantController.getClosures);
 router.post('/closures', authorizeRole(['restaurant']), restaurantController.createClosure);
 router.delete('/closures/:id', authorizeRole(['restaurant']), restaurantController.deleteClosure);
+
+// Customers - accessible to restaurant and server roles
+router.get('/customers', authorizeRole(['restaurant', 'server']), customerController.getCustomers);
+router.get('/customers/search', authorizeRole(['restaurant', 'server']), customerController.searchCustomers);
+router.get('/customers/export', authorizeRole(['restaurant']), customerController.exportCustomers);
+router.get('/customers/:id', authorizeRole(['restaurant', 'server']), customerController.getCustomerById);
+router.post('/customers', authorizeRole(['restaurant']), customerController.createCustomer);
+router.put('/customers/:id', authorizeRole(['restaurant']), customerController.updateCustomer);
 
 export default router;

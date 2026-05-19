@@ -14,6 +14,7 @@ import {
 } from '../services/emailService';
 import { sendPushNotificationToRestaurant } from '../services/pushNotificationService';
 import { emitToRestaurant, createReservationEvent } from '../services/sseService';
+import { syncCustomer } from './customer.controller';
 
 
 // Validation schemas
@@ -150,6 +151,10 @@ export const createReservation = async (req: Request, res: Response): Promise<vo
     });
 
     await reservation.save();
+
+    syncCustomer(req.user.restaurantId, validatedData.customerEmail).catch((err) =>
+      logger.error('syncCustomer failed:', err)
+    );
 
     // Increment reservation count for quota tracking (Starter plan)
     try {
@@ -318,6 +323,15 @@ export const updateReservation = async (req: Request, res: Response): Promise<vo
 
     logger.info(`Reservation updated: ID ${id}`);
 
+    syncCustomer(req.user.restaurantId, reservation.customerEmail).catch((err) =>
+      logger.error('syncCustomer failed:', err)
+    );
+    if (validatedData.customerEmail && oldReservation?.customerEmail && validatedData.customerEmail !== oldReservation.customerEmail) {
+      syncCustomer(req.user.restaurantId, oldReservation.customerEmail).catch((err) =>
+        logger.error('syncCustomer (old email) failed:', err)
+      );
+    }
+
     // Send push notifications for changes
     if (oldReservation) {
       const events: string[] = [];
@@ -475,6 +489,10 @@ export const deleteReservation = async (req: Request, res: Response): Promise<vo
     }
 
     logger.info(`Reservation deleted: ID ${id}`);
+
+    syncCustomer(req.user.restaurantId, reservation.customerEmail).catch((err) =>
+      logger.error('syncCustomer failed:', err)
+    );
 
     // Send SSE event for real-time dashboard updates
     try {

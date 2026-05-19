@@ -3,6 +3,7 @@ import app from './app';
 import connectDatabase from './config/database';
 import logger from './utils/logger';
 import { validateEnv } from './config/env.validation';
+import { startReminderCron, stopReminderCron } from './services/reminderCron.service';
 import mongoose from 'mongoose';
 
 const PORT = process.env.PORT || 4000;
@@ -65,6 +66,9 @@ const startServer = async () => {
     // Connect to database
     await connectDatabase();
 
+    // Start reminder cron (sends email reminders 24h before reservations)
+    startReminderCron();
+
     // Start server
     const server = app.listen(PORT, () => {
       logger.info(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
@@ -78,6 +82,8 @@ const startServer = async () => {
     // Graceful shutdown handler
     const gracefulShutdown = async (signal: string) => {
       logger.info(`${signal} received. Starting graceful shutdown...`);
+
+      stopReminderCron();
 
       // Stop accepting new connections
       server.close(async () => {

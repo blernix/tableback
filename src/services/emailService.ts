@@ -870,3 +870,37 @@ export { sendEmail };
 export function resetApiInstance(): void {
   apiInstance = null;
 }
+
+/**
+ * REMINDER EMAIL
+ *
+ * Sent 24h before a confirmed reservation to remind the customer.
+ *
+ * Template: reminder
+ * Variables: customerName, restaurantName, restaurantPhone, restaurantEmail,
+ *            reservationDate, reservationTime, partySize
+ */
+export async function sendReminderEmail(
+  reservation: Reservation,
+  restaurant: Restaurant
+): Promise<EmailResult> {
+  return sendEmail({
+    to: reservation.customerEmail,
+    toName: reservation.customerName,
+    subject: `Rappel : Réservation demain - ${restaurant.name}`,
+    templateName: 'reminder',
+    params: {
+      customerName: reservation.customerName,
+      restaurantName: restaurant.name,
+      restaurantPhone: restaurant.phone,
+      restaurantEmail: restaurant.email,
+      reservationDate: formatDate(reservation.date),
+      reservationTime: reservation.time,
+      partySize: reservation.partySize,
+    },
+    replyTo: {
+      email: restaurant.email,
+      name: restaurant.name,
+    },
+  });
+}

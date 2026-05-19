@@ -8,6 +8,7 @@ import logger from '../utils/logger';
 import { z } from 'zod';
 import { uploadToGCS, deleteFromGCS } from '../config/storage.config';
 import { sendEmail } from '../services/emailService';
+import { WIDGET_DEFAULTS } from '../config/widgetDefaults';
 
 // Validation schemas
 const updateBasicInfoSchema = z.object({
@@ -838,59 +839,56 @@ export const updateWidgetConfig = async (req: Request, res: Response): Promise<v
     if (validatedData.buttonBackgroundColor !== undefined) {
       restaurant.widgetConfig.buttonBackgroundColor = validatedData.buttonBackgroundColor;
     } else if (!restaurant.widgetConfig.buttonBackgroundColor) {
-      // Initialiser avec la primaryColor par défaut si pas défini
-      restaurant.widgetConfig.buttonBackgroundColor = restaurant.widgetConfig.primaryColor || '#0066FF';
+      restaurant.widgetConfig.buttonBackgroundColor = WIDGET_DEFAULTS.buttonBackgroundColor;
     }
     
     if (validatedData.buttonTextColor !== undefined) {
       restaurant.widgetConfig.buttonTextColor = validatedData.buttonTextColor;
     } else if (!restaurant.widgetConfig.buttonTextColor) {
-      // Initialiser avec blanc par défaut si pas défini
-      restaurant.widgetConfig.buttonTextColor = '#FFFFFF';
+      restaurant.widgetConfig.buttonTextColor = WIDGET_DEFAULTS.buttonTextColor;
     }
     
     if (validatedData.buttonHoverColor !== undefined) {
       restaurant.widgetConfig.buttonHoverColor = validatedData.buttonHoverColor;
     } else if (!restaurant.widgetConfig.buttonHoverColor) {
-      // Initialiser avec une couleur plus foncée par défaut
-      restaurant.widgetConfig.buttonHoverColor = '#0052EB';
+      restaurant.widgetConfig.buttonHoverColor = WIDGET_DEFAULTS.buttonHoverColor;
     }
     
     // Floating button general configs
     if (validatedData.buttonText !== undefined) {
       restaurant.widgetConfig.buttonText = validatedData.buttonText;
     } else if (!restaurant.widgetConfig.buttonText) {
-      restaurant.widgetConfig.buttonText = 'Réserver une table';
+      restaurant.widgetConfig.buttonText = WIDGET_DEFAULTS.buttonText;
     }
     
     if (validatedData.buttonPosition !== undefined) {
       restaurant.widgetConfig.buttonPosition = validatedData.buttonPosition;
     } else if (!restaurant.widgetConfig.buttonPosition) {
-      restaurant.widgetConfig.buttonPosition = 'bottom-right';
+      restaurant.widgetConfig.buttonPosition = WIDGET_DEFAULTS.buttonPosition;
     }
     
     if (validatedData.buttonStyle !== undefined) {
       restaurant.widgetConfig.buttonStyle = validatedData.buttonStyle;
     } else if (!restaurant.widgetConfig.buttonStyle) {
-      restaurant.widgetConfig.buttonStyle = 'round';
+      restaurant.widgetConfig.buttonStyle = WIDGET_DEFAULTS.buttonStyle;
     }
     
     if (validatedData.buttonIcon !== undefined) {
       restaurant.widgetConfig.buttonIcon = validatedData.buttonIcon;
     } else if (restaurant.widgetConfig.buttonIcon === undefined) {
-      restaurant.widgetConfig.buttonIcon = false;
+      restaurant.widgetConfig.buttonIcon = WIDGET_DEFAULTS.buttonIcon;
     }
     
     if (validatedData.modalWidth !== undefined) {
       restaurant.widgetConfig.modalWidth = validatedData.modalWidth;
     } else if (!restaurant.widgetConfig.modalWidth) {
-      restaurant.widgetConfig.modalWidth = '500px';
+      restaurant.widgetConfig.modalWidth = WIDGET_DEFAULTS.modalWidth;
     }
     
     if (validatedData.modalHeight !== undefined) {
       restaurant.widgetConfig.modalHeight = validatedData.modalHeight;
     } else if (!restaurant.widgetConfig.modalHeight) {
-      restaurant.widgetConfig.modalHeight = '600px';
+      restaurant.widgetConfig.modalHeight = WIDGET_DEFAULTS.modalHeight;
     }
 
     await restaurant.save();

@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { z } from 'zod';
 import mongoose from 'mongoose';
 import Restaurant from '../models/Restaurant.model';
 import User from '../models/User.model';
@@ -12,7 +13,57 @@ import PushSubscription from '../models/PushSubscription.model';
 import NotificationPreferences from '../models/NotificationPreferences.model';
 import SubscriptionHistory from '../models/SubscriptionHistory.model';
 import logger from '../utils/logger';
-import { z } from 'zod';
+
+const createCommercialSchema = z.object({
+  email: z.string().email('Email invalide'),
+  password: z.string().min(6, 'Mot de passe de 6 caractères minimum'),
+  name: z.string().min(1, 'Nom requis').trim().optional(),
+});
+
+export const createCommercialUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const validatedData = createCommercialSchema.parse(req.body);
+
+    const existing = await User.findOne({ email: validatedData.email });
+    if (existing) {
+      res.status(409).json({ error: { message: 'Un utilisateur avec cet email existe déjà' } });
+      return;
+    }
+
+    const user = new User({
+      email: validatedData.email,
+      password: validatedData.password,
+      role: 'commercial',
+      status: 'active',
+      mustChangePassword: false,
+    });
+    await user.save();
+
+    logger.info(`Commercial user created: ${user.email}`);
+
+    res.status(201).json({
+      user: { id: user._id, email: user.email, role: user.role },
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: { message: 'Validation error', details: error.errors } });
+      return;
+    }
+    logger.error('Error creating commercial user:', error);
+    res.status(500).json({ error: { message: 'Failed to create commercial user' } });
+  }
+};
+
+export const getCommercialUsers = async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const users = await User.find({ role: 'commercial' }).select('email status createdAt').sort({ createdAt: -1 });
+    res.status(200).json({ users });
+  } catch (error) {
+    logger.error('Error fetching commercial users:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch commercial users' } });
+  }
+};
+
 import {
   getRestaurantNotificationAnalytics,
   getNotificationDeliveryRate,
@@ -181,9 +232,7 @@ export const deleteRestaurant = async (req: Request, res: Response): Promise<voi
   try {
     const { id } = req.params;
 
-    // Check if restaurant exists first
     const restaurant = await Restaurant.findById(id);
-
     if (!restaurant) {
       res.status(404).json({ error: { message: 'Restaurant not found' } });
       return;
@@ -194,56 +243,33 @@ export const deleteRestaurant = async (req: Request, res: Response): Promise<voi
 
     logger.info(`Starting deletion of restaurant: ${restaurantName} (ID: ${restaurantId})`);
 
-    // Delete all associated data in parallel for better performance
-    const deletionPromises = [
-      // Delete all users associated with this restaurant
-      User.deleteMany({ restaurantId: restaurantId }),
-
-      // Delete all reservations
-      Reservation.deleteMany({ restaurantId: restaurantId }),
-
-      // Delete all menu categories and dishes
-      MenuCategory.deleteMany({ restaurantId: restaurantId }),
-      Dish.deleteMany({ restaurantId: restaurantId }),
-
-      // Delete all day blocks and closures
-      DayBlock.deleteMany({ restaurantId: restaurantId }),
-      Closure.deleteMany({ restaurantId: restaurantId }),
-
-      // Delete all push subscriptions
-      PushSubscription.deleteMany({ restaurantId: restaurantId }),
-
-      // Delete notification preferences and analytics
-      NotificationPreferences.deleteMany({ restaurantId: restaurantId }),
-      NotificationAnalytics.deleteMany({ restaurantId: restaurantId }),
-
-      // Delete subscription history
-      SubscriptionHistory.deleteMany({ restaurantId: restaurantId }),
-    ];
-
-    // Execute all deletions in parallel
-    const results = await Promise.all(deletionPromises);
-
-    // Log deletion counts
-    logger.info(`Deleted associated data for restaurant ${restaurantName}:`, {
-      users: results[0].deletedCount,
-      reservations: results[1].deletedCount,
-      menuCategories: results[2].deletedCount,
-      dishes: results[3].deletedCount,
-      dayBlocks: results[4].deletedCount,
-      closures: results[5].deletedCount,
-      pushSubscriptions: results[6].deletedCount,
-      notificationPreferences: results[7].deletedCount,
-      notificationAnalytics: results[8].deletedCount,
-      subscriptionHistory: results[9].deletedCount,
-    });
-
-    // Finally, delete the restaurant itself
+    // Delete the restaurant FIRST to prevent orphaned associated data
     await Restaurant.findByIdAndDelete(id);
 
-    logger.info(
-      `Restaurant and all associated data deleted successfully: ${restaurantName} (ID: ${restaurantId})`
-    );
+    // Then delete associated data — use allSettled so one failure doesn't block others
+    const results = await Promise.allSettled([
+      User.deleteMany({ restaurantId }),
+      Reservation.deleteMany({ restaurantId }),
+      MenuCategory.deleteMany({ restaurantId }),
+      Dish.deleteMany({ restaurantId }),
+      DayBlock.deleteMany({ restaurantId }),
+      Closure.deleteMany({ restaurantId }),
+      PushSubscription.deleteMany({ restaurantId }),
+      NotificationPreferences.deleteMany({ restaurantId }),
+      NotificationAnalytics.deleteMany({ restaurantId }),
+      SubscriptionHistory.deleteMany({ restaurantId }),
+    ]);
+
+    results.forEach((r, i) => {
+      const labels = ['users', 'reservations', 'menuCategories', 'dishes', 'dayBlocks', 'closures', 'pushSubscriptions', 'notificationPreferences', 'notificationAnalytics', 'subscriptionHistory'];
+      if (r.status === 'fulfilled') {
+        logger.info(`Deleted ${r.value.deletedCount} ${labels[i]} for restaurant ${restaurantName}`);
+      } else {
+        logger.error(`Failed to delete ${labels[i]} for restaurant ${restaurantName}:`, r.reason);
+      }
+    });
+
+    logger.info(`Restaurant and associated data deleted: ${restaurantName} (ID: ${restaurantId})`);
 
     res.status(204).send();
   } catch (error) {
@@ -336,32 +362,24 @@ export const createRestaurantUser = async (req: Request, res: Response): Promise
 export const getRestaurantUsers = async (req: Request, res: Response): Promise<void> => {
   try {
     const { restaurantId } = req.params;
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 50), 200);
 
-    // Check if restaurant exists
     const restaurant = await Restaurant.findById(restaurantId);
     if (!restaurant) {
       res.status(404).json({ error: { message: 'Restaurant not found' } });
       return;
     }
 
-    // Get all users associated with this restaurant
-    const users = await User.find({
-      restaurantId: restaurant._id,
-      role: { $in: ['restaurant', 'server'] },
-    })
-      .select('-password -__v')
-      .sort({ createdAt: -1 });
+    const filter = { restaurantId: restaurant._id, role: { $in: ['restaurant', 'server'] } };
+    const [users, total] = await Promise.all([
+      User.find(filter).select('-password -__v').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+      User.countDocuments(filter),
+    ]);
 
     res.status(200).json({
-      users: users.map((user) => ({
-        id: user._id,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-        restaurantId: user.restaurantId,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-      })),
+      users: users.map((u) => ({ id: u._id, email: u.email, role: u.role, status: u.status, restaurantId: u.restaurantId, createdAt: u.createdAt, updatedAt: u.updatedAt })),
+      pagination: { total, page, limit, pages: Math.ceil(total / limit) },
     });
   } catch (error) {
     logger.error('Error fetching restaurant users:', error);
@@ -454,230 +472,113 @@ export const deleteUser = async (req: Request, res: Response): Promise<void> => 
 // Get admin dashboard statistics
 export const getAdminDashboard = async (_req: Request, res: Response): Promise<void> => {
   try {
-    // Optimize: Count restaurants by status in a single aggregation
-    const restaurantStats = await Restaurant.aggregate([
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 },
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+    // All queries are independent — run in parallel
+    const [
+      restaurantStatusStats,
+      accountTypeStats,
+      subscriptionStats,
+      userStats,
+      recentReservations,
+      totalReservations,
+      monthlyReservations,
+      recentRestaurants,
+      abandonedSignups,
+      topRestaurants,
+      starterRestaurants,
+    ] = await Promise.all([
+      Restaurant.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+
+      Restaurant.aggregate([{ $group: { _id: '$accountType', count: { $sum: 1 } } }]),
+
+      Restaurant.aggregate([
+        { $match: { accountType: 'self-service' } },
+        {
+          $group: {
+            _id: { plan: '$subscription.plan', status: '$subscription.status' },
+            count: { $sum: 1 },
+          },
         },
-      },
+      ]),
+
+      User.aggregate([{ $group: { _id: '$role', count: { $sum: 1 } } }]),
+
+      Reservation.countDocuments({ createdAt: { $gte: oneWeekAgo }, status: { $nin: ['cancelled'] } }),
+
+      Reservation.countDocuments({ status: { $nin: ['cancelled'] } }),
+
+      Reservation.countDocuments({ createdAt: { $gte: startOfMonth, $lte: endOfMonth }, status: { $nin: ['cancelled'] } }),
+
+      Restaurant.countDocuments({ createdAt: { $gte: oneMonthAgo } }),
+
+      Restaurant.aggregate([
+        { $match: { status: 'inactive', accountType: 'self-service', $or: [{ 'subscription.stripeSubscriptionId': { $exists: false } }, { 'subscription.stripeSubscriptionId': null }] } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 }, restaurants: { $push: { id: '$_id', name: '$name', email: '$email', createdAt: '$createdAt' } } } },
+        { $sort: { _id: -1 } },
+        { $limit: 30 },
+      ]),
+
+      Reservation.aggregate([
+        { $match: { createdAt: { $gte: oneMonthAgo }, status: { $nin: ['cancelled'] } } },
+        { $group: { _id: '$restaurantId', reservationCount: { $sum: 1 } } },
+        { $sort: { reservationCount: -1 } },
+        { $limit: 5 },
+        { $lookup: { from: 'restaurants', localField: '_id', foreignField: '_id', as: 'restaurant' } },
+        { $unwind: '$restaurant' },
+        { $project: { restaurantId: '$_id', restaurantName: '$restaurant.name', reservationCount: 1, accountType: '$restaurant.accountType', subscriptionPlan: '$restaurant.subscription.plan', _id: 0 } },
+      ]),
+
+      Restaurant.find({ accountType: 'self-service', 'subscription.plan': 'starter', 'subscription.status': 'active' }).select('name reservationQuota'),
     ]);
 
-    const activeRestaurants = restaurantStats.find((s) => s._id === 'active')?.count || 0;
-    const inactiveRestaurants = restaurantStats.find((s) => s._id === 'inactive')?.count || 0;
-
-    // Count restaurants by account type (manual vs self-service)
-    const accountTypeStats = await Restaurant.aggregate([
-      {
-        $group: {
-          _id: '$accountType',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+    // Extract restaurant stats
+    const activeRestaurants = restaurantStatusStats.find((s) => s._id === 'active')?.count || 0;
+    const inactiveRestaurants = restaurantStatusStats.find((s) => s._id === 'inactive')?.count || 0;
 
     const managedRestaurants = accountTypeStats.find((s) => s._id === 'managed')?.count || 0;
-    const selfServiceRestaurants =
-      accountTypeStats.find((s) => s._id === 'self-service')?.count || 0;
+    const selfServiceRestaurants = accountTypeStats.find((s) => s._id === 'self-service')?.count || 0;
 
-    // Count self-service restaurants by subscription plan
-    const subscriptionPlanStats = await Restaurant.aggregate([
-      {
-        $match: {
-          accountType: 'self-service',
-        },
-      },
-      {
-        $group: {
-          _id: '$subscription.plan',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
+    // Subscription stats from combined aggregation
+    const starterPlanCount = subscriptionStats
+      .filter((s) => s._id.plan === 'starter')
+      .reduce((sum, s) => sum + s.count, 0);
+    const proPlanCount = subscriptionStats
+      .filter((s) => s._id.plan === 'pro')
+      .reduce((sum, s) => sum + s.count, 0);
 
-    const starterPlanCount = subscriptionPlanStats.find((s) => s._id === 'starter')?.count || 0;
-    const proPlanCount = subscriptionPlanStats.find((s) => s._id === 'pro')?.count || 0;
+    const activeStarterRestaurants = subscriptionStats.find((s) => s._id.plan === 'starter' && s._id.status === 'active')?.count || 0;
+    const activeProRestaurants = subscriptionStats.find((s) => s._id.plan === 'pro' && s._id.status === 'active')?.count || 0;
+    const activeSubscriptions = activeStarterRestaurants + activeProRestaurants;
+    const trialSubscriptions = subscriptionStats.find((s) => s._id.status === 'trial')?.count || 0;
+    const pastDueSubscriptions = subscriptionStats.find((s) => s._id.status === 'past_due')?.count || 0;
+    const cancelledSubscriptions = subscriptionStats.find((s) => s._id.status === 'cancelled')?.count || 0;
 
-    // Count by subscription status
-    const subscriptionStatusStats = await Restaurant.aggregate([
-      {
-        $match: {
-          accountType: 'self-service',
-        },
-      },
-      {
-        $group: {
-          _id: '$subscription.status',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
-    const activeSubscriptions = subscriptionStatusStats.find((s) => s._id === 'active')?.count || 0;
-    const trialSubscriptions = subscriptionStatusStats.find((s) => s._id === 'trial')?.count || 0;
-    const pastDueSubscriptions =
-      subscriptionStatusStats.find((s) => s._id === 'past_due')?.count || 0;
-    const cancelledSubscriptions =
-      subscriptionStatusStats.find((s) => s._id === 'cancelled')?.count || 0;
-
-    // Calculate MRR (Monthly Recurring Revenue)
-    // Only count active subscriptions
-    const activeStarterRestaurants = await Restaurant.countDocuments({
-      accountType: 'self-service',
-      'subscription.plan': 'starter',
-      'subscription.status': 'active',
-    });
-
-    const activeProRestaurants = await Restaurant.countDocuments({
-      accountType: 'self-service',
-      'subscription.plan': 'pro',
-      'subscription.status': 'active',
-    });
-
+    // MRR
     const mrr = activeStarterRestaurants * 39 + activeProRestaurants * 69;
 
-    // Optimize: Count users by role in a single aggregation
-    const userStats = await User.aggregate([
-      {
-        $group: {
-          _id: '$role',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
+    // User stats
     const adminUsers = userStats.find((s) => s._id === 'admin')?.count || 0;
     const restaurantUsers = userStats.find((s) => s._id === 'restaurant')?.count || 0;
     const serverUsers = userStats.find((s) => s._id === 'server')?.count || 0;
 
-    // Recent reservations (last 7 days)
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-    const recentReservations = await Reservation.countDocuments({
-      createdAt: { $gte: oneWeekAgo },
-      status: { $nin: ['cancelled'] },
-    });
-
-    // Total reservations (all time, excluding cancelled)
-    const totalReservations = await Reservation.countDocuments({
-      status: { $nin: ['cancelled'] },
-    });
-
-    // Reservations this month
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-
-    const monthlyReservations = await Reservation.countDocuments({
-      createdAt: { $gte: startOfMonth, $lte: endOfMonth },
-      status: { $nin: ['cancelled'] },
-    });
-
-    // Recent restaurants (last 30 days)
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setDate(oneMonthAgo.getDate() - 30);
-
-    const recentRestaurants = await Restaurant.countDocuments({
-      createdAt: { $gte: oneMonthAgo },
-    });
-
-    // Abandoned signups: inactive self-service restaurants without Stripe subscription
-    const abandonedSignups = await Restaurant.aggregate([
-      {
-        $match: {
-          status: 'inactive',
-          accountType: 'self-service',
-          $or: [
-            { 'subscription.stripeSubscriptionId': { $exists: false } },
-            { 'subscription.stripeSubscriptionId': null },
-          ],
-        },
-      },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
-          },
-          count: { $sum: 1 },
-          restaurants: {
-            $push: {
-              id: '$_id',
-              name: '$name',
-              email: '$email',
-              createdAt: '$createdAt',
-            },
-          },
-        },
-      },
-      { $sort: { _id: -1 } },
-      { $limit: 30 }, // Last 30 days
-    ]);
-
+    // Abandoned signups
     const totalAbandonedSignups = abandonedSignups.reduce((sum, day) => sum + day.count, 0);
 
-    // Top 5 restaurants by reservation count (last 30 days)
-    const topRestaurants = await Reservation.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: oneMonthAgo },
-          status: { $nin: ['cancelled'] },
-        },
-      },
-      {
-        $group: {
-          _id: '$restaurantId',
-          reservationCount: { $sum: 1 },
-        },
-      },
-      {
-        $sort: { reservationCount: -1 },
-      },
-      {
-        $limit: 5,
-      },
-      {
-        $lookup: {
-          from: 'restaurants',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'restaurant',
-        },
-      },
-      {
-        $unwind: '$restaurant',
-      },
-      {
-        $project: {
-          restaurantId: '$_id',
-          restaurantName: '$restaurant.name',
-          reservationCount: 1,
-          accountType: '$restaurant.accountType',
-          subscriptionPlan: '$restaurant.subscription.plan',
-          _id: 0,
-        },
-      },
-    ]);
-
-    // Get quota usage for Starter plan restaurants
-    const starterRestaurants = await Restaurant.find({
-      accountType: 'self-service',
-      'subscription.plan': 'starter',
-      'subscription.status': 'active',
-    }).select('name reservationQuota');
-
+    // Quota usage
     const quotaUsage = starterRestaurants.map((r) => ({
       restaurantName: r.name,
       current: r.reservationQuota?.monthlyCount || 0,
       limit: r.reservationQuota?.limit || 400,
       percentage: r.getReservationQuotaInfo().percentage,
     }));
-
-    const averageQuotaUsage =
-      quotaUsage.length > 0
-        ? Math.round(quotaUsage.reduce((sum, q) => sum + q.percentage, 0) / quotaUsage.length)
-        : 0;
+    const averageQuotaUsage = quotaUsage.length > 0
+      ? Math.round(quotaUsage.reduce((sum, q) => sum + q.percentage, 0) / quotaUsage.length)
+      : 0;
 
     res.status(200).json({
       stats: {
@@ -686,50 +587,23 @@ export const getAdminDashboard = async (_req: Request, res: Response): Promise<v
           active: activeRestaurants,
           inactive: inactiveRestaurants,
           recent: recentRestaurants,
-          byAccountType: {
-            managed: managedRestaurants,
-            selfService: selfServiceRestaurants,
-          },
+          byAccountType: { managed: managedRestaurants, selfService: selfServiceRestaurants },
         },
         subscriptions: {
-          byPlan: {
-            starter: starterPlanCount,
-            pro: proPlanCount,
-          },
-          byStatus: {
-            active: activeSubscriptions,
-            trial: trialSubscriptions,
-            pastDue: pastDueSubscriptions,
-            cancelled: cancelledSubscriptions,
-          },
+          byPlan: { starter: starterPlanCount, pro: proPlanCount },
+          byStatus: { active: activeSubscriptions, trial: trialSubscriptions, pastDue: pastDueSubscriptions, cancelled: cancelledSubscriptions },
           activeSubscriptions: activeStarterRestaurants + activeProRestaurants,
         },
         revenue: {
-          mrr: mrr,
-          breakdown: {
-            starter: activeStarterRestaurants * 39,
-            pro: activeProRestaurants * 69,
-          },
+          mrr,
+          breakdown: { starter: activeStarterRestaurants * 39, pro: activeProRestaurants * 69 },
           activeStarterCount: activeStarterRestaurants,
           activeProCount: activeProRestaurants,
         },
-        users: {
-          total: adminUsers + restaurantUsers + serverUsers,
-          admin: adminUsers,
-          restaurant: restaurantUsers,
-          server: serverUsers,
-        },
-        reservations: {
-          total: totalReservations,
-          thisMonth: monthlyReservations,
-          recent: recentReservations,
-          averageQuotaUsage: averageQuotaUsage,
-        },
+        users: { total: adminUsers + restaurantUsers + serverUsers, admin: adminUsers, restaurant: restaurantUsers, server: serverUsers },
+        reservations: { total: totalReservations, thisMonth: monthlyReservations, recent: recentReservations, averageQuotaUsage },
         topRestaurants,
-        abandonedSignups: {
-          total: totalAbandonedSignups,
-          byDay: abandonedSignups,
-        },
+        abandonedSignups: { total: totalAbandonedSignups, byDay: abandonedSignups },
       },
     });
   } catch (error) {
@@ -907,39 +781,25 @@ export const getRestaurantAnalytics = async (req: Request, res: Response): Promi
 };
 
 // Export restaurants as CSV
-export const exportRestaurants = async (_req: Request, res: Response): Promise<void> => {
+export const exportRestaurants = async (req: Request, res: Response): Promise<void> => {
   try {
-    const restaurants = await Restaurant.find().select('-__v -apiKey').sort({ createdAt: -1 });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 2000), 10000);
+    const skip = (page - 1) * limit;
 
-    // CSV header
-    const header = [
-      'ID',
-      'Name',
-      'Address',
-      'Phone',
-      'Email',
-      'Status',
-      'Created At',
-      'Updated At',
-    ];
-
-    // CSV rows
-    const rows = restaurants.map((restaurant) => [
-      restaurant._id.toString(),
-      `"${restaurant.name.replace(/"/g, '""')}"`,
-      `"${restaurant.address.replace(/"/g, '""')}"`,
-      `"${restaurant.phone.replace(/"/g, '""')}"`,
-      `"${restaurant.email.replace(/"/g, '""')}"`,
-      restaurant.status,
-      restaurant.createdAt.toISOString(),
-      restaurant.updatedAt.toISOString(),
+    const [restaurants, total] = await Promise.all([
+      Restaurant.find().select('-__v -apiKey').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Restaurant.countDocuments(),
     ]);
+
+    const header = ['ID', 'Name', 'Address', 'Phone', 'Email', 'Status', 'Created At', 'Updated At'];
+    const rows = restaurants.map((r) => [r._id.toString(), `"${r.name.replace(/"/g, '""')}"`, `"${r.address.replace(/"/g, '""')}"`, `"${r.phone.replace(/"/g, '""')}"`, `"${r.email.replace(/"/g, '""')}"`, r.status, r.createdAt.toISOString(), r.updatedAt.toISOString()]);
 
     const csv = [header.join(','), ...rows.map((row) => row.join(','))].join('\n');
 
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=restaurants.csv');
-    res.send(csv);
+    res.setHeader('Content-Disposition', `attachment; filename=restaurants_p${page}.csv`);
+    res.json({ data: csv, pagination: { total, page, limit, pages: Math.ceil(total / limit) } });
   } catch (error) {
     logger.error('Error exporting restaurants:', error);
     res.status(500).json({ error: { message: 'Failed to export restaurants' } });
@@ -947,27 +807,23 @@ export const exportRestaurants = async (_req: Request, res: Response): Promise<v
 };
 
 // Export users as CSV
-export const exportUsers = async (_req: Request, res: Response): Promise<void> => {
+export const exportUsers = async (req: Request, res: Response): Promise<void> => {
   try {
-    const users = await User.find().select('-password -__v').sort({ createdAt: -1 });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 2000), 10000);
+    const skip = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      User.find().select('-password -__v').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      User.countDocuments(),
+    ]);
 
     const header = ['ID', 'Email', 'Role', 'Restaurant ID', 'Status', 'Created At', 'Updated At'];
-
-    const rows = users.map((user) => [
-      user._id.toString(),
-      `"${user.email.replace(/"/g, '""')}"`,
-      user.role,
-      user.restaurantId ? user.restaurantId.toString() : '',
-      user.status,
-      user.createdAt.toISOString(),
-      user.updatedAt.toISOString(),
-    ]);
+    const rows = users.map((u) => [u._id.toString(), `"${u.email.replace(/"/g, '""')}"`, u.role, u.restaurantId ? u.restaurantId.toString() : '', u.status, u.createdAt.toISOString(), u.updatedAt.toISOString()]);
 
     const csv = [header.join(','), ...rows.map((row) => row.join(','))].join('\n');
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=users.csv');
-    res.send(csv);
+    res.status(200).json({ data: csv, pagination: { total, page, limit, pages: Math.ceil(total / limit) } });
   } catch (error) {
     logger.error('Error exporting users:', error);
     res.status(500).json({ error: { message: 'Failed to export users' } });
@@ -975,49 +831,23 @@ export const exportUsers = async (_req: Request, res: Response): Promise<void> =
 };
 
 // Export reservations as CSV
-export const exportReservations = async (_req: Request, res: Response): Promise<void> => {
+export const exportReservations = async (req: Request, res: Response): Promise<void> => {
   try {
-    const reservations = await Reservation.find()
-      .populate('restaurantId', 'name')
-      .sort({ createdAt: -1 });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 2000), 10000);
+    const skip = (page - 1) * limit;
 
-    const header = [
-      'ID',
-      'Restaurant Name',
-      'Restaurant ID',
-      'Customer Name',
-      'Customer Email',
-      'Customer Phone',
-      'Date',
-      'Time',
-      'Number of Guests',
-      'Status',
-      'Notes',
-      'Created At',
-      'Updated At',
-    ];
-
-    const rows = reservations.map((reservation) => [
-      reservation._id.toString(),
-      `"${(reservation.restaurantId as any)?.name?.replace(/"/g, '""') || ''}"`,
-      reservation.restaurantId ? reservation.restaurantId.toString() : '',
-      `"${reservation.customerName.replace(/"/g, '""')}"`,
-      `"${reservation.customerEmail.replace(/"/g, '""')}"`,
-      `"${reservation.customerPhone.replace(/"/g, '""')}"`,
-      reservation.date.toISOString().split('T')[0],
-      reservation.time,
-      reservation.numberOfGuests,
-      reservation.status,
-      `"${(reservation.notes || '').replace(/"/g, '""')}"`,
-      reservation.createdAt.toISOString(),
-      reservation.updatedAt.toISOString(),
+    const [reservations, total] = await Promise.all([
+      Reservation.find().populate('restaurantId', 'name').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Reservation.countDocuments(),
     ]);
+
+    const header = ['ID', 'Restaurant Name', 'Restaurant ID', 'Customer Name', 'Customer Email', 'Customer Phone', 'Date', 'Time', 'Number of Guests', 'Status', 'Notes', 'Created At', 'Updated At'];
+    const rows = reservations.map((r) => [r._id.toString(), `"${(r.restaurantId as any)?.name?.replace(/"/g, '""') || ''}"`, r.restaurantId ? r.restaurantId.toString() : '', `"${r.customerName.replace(/"/g, '""')}"`, `"${r.customerEmail.replace(/"/g, '""')}"`, `"${r.customerPhone.replace(/"/g, '""')}"`, r.date.toISOString().split('T')[0], r.time, r.numberOfGuests, r.status, `"${(r.notes || '').replace(/"/g, '""')}"`, r.createdAt.toISOString(), r.updatedAt.toISOString()]);
 
     const csv = [header.join(','), ...rows.map((row) => row.join(','))].join('\n');
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=reservations.csv');
-    res.send(csv);
+    res.status(200).json({ data: csv, pagination: { total, page, limit, pages: Math.ceil(total / limit) } });
   } catch (error) {
     logger.error('Error exporting reservations:', error);
     res.status(500).json({ error: { message: 'Failed to export reservations' } });
@@ -1267,66 +1097,23 @@ export const getRestaurantNotificationAnalyticsController = async (
 };
 
 // Export notification analytics as CSV
-export const exportNotificationAnalytics = async (_req: Request, res: Response): Promise<void> => {
+export const exportNotificationAnalytics = async (req: Request, res: Response): Promise<void> => {
   try {
-    const analytics = await NotificationAnalytics.find()
-      .populate('restaurantId', 'name')
-      .populate('userId', 'email')
-      .sort({ sentAt: -1 });
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 2000), 10000);
+    const skip = (page - 1) * limit;
 
-    // CSV header
-    const header = [
-      'ID',
-      'Restaurant Name',
-      'User Email',
-      'Notification Type',
-      'Event Type',
-      'Status',
-      'Sent At',
-      'Delivered At',
-      'Opened At',
-      'Clicked At',
-      'Failed At',
-      'Error Code',
-      'Error Message',
-      'Push Endpoint',
-      'Push Message ID',
-      'Email To',
-      'Email Message ID',
-      'SSE Client ID',
-      'Created At',
-      'Updated At',
-    ];
-
-    // CSV rows
-    const rows = analytics.map((item) => [
-      item._id.toString(),
-      `"${(item.restaurantId as any)?.name?.replace(/"/g, '""') || ''}"`,
-      `"${(item.userId as any)?.email?.replace(/"/g, '""') || ''}"`,
-      item.notificationType,
-      item.eventType,
-      item.status,
-      item.sentAt.toISOString(),
-      item.deliveredAt ? item.deliveredAt.toISOString() : '',
-      item.openedAt ? item.openedAt.toISOString() : '',
-      item.clickedAt ? item.clickedAt.toISOString() : '',
-      item.failedAt ? item.failedAt.toISOString() : '',
-      item.errorCode || '',
-      `"${(item.errorMessage || '').replace(/"/g, '""')}"`,
-      item.pushEndpoint || '',
-      item.pushMessageId || '',
-      item.emailTo || '',
-      item.emailMessageId || '',
-      item.sseClientId || '',
-      item.createdAt.toISOString(),
-      item.updatedAt.toISOString(),
+    const [analytics, total] = await Promise.all([
+      NotificationAnalytics.find().populate('restaurantId', 'name').populate('userId', 'email').sort({ sentAt: -1 }).skip(skip).limit(limit),
+      NotificationAnalytics.countDocuments(),
     ]);
+
+    const header = ['ID', 'Restaurant Name', 'User Email', 'Notification Type', 'Event Type', 'Status', 'Sent At', 'Delivered At', 'Opened At', 'Clicked At', 'Failed At', 'Error Code', 'Error Message', 'Push Endpoint', 'Push Message ID', 'Email To', 'Email Message ID', 'SSE Client ID', 'Created At', 'Updated At'];
+    const rows = analytics.map((item) => [item._id.toString(), `"${(item.restaurantId as any)?.name?.replace(/"/g, '""') || ''}"`, `"${(item.userId as any)?.email?.replace(/"/g, '""') || ''}"`, item.notificationType, item.eventType, item.status, item.sentAt.toISOString(), item.deliveredAt ? item.deliveredAt.toISOString() : '', item.openedAt ? item.openedAt.toISOString() : '', item.clickedAt ? item.clickedAt.toISOString() : '', item.failedAt ? item.failedAt.toISOString() : '', item.errorCode || '', `"${(item.errorMessage || '').replace(/"/g, '""')}"`, item.pushEndpoint || '', item.pushMessageId || '', item.emailTo || '', item.emailMessageId || '', item.sseClientId || '', item.createdAt.toISOString(), item.updatedAt.toISOString()]);
 
     const csv = [header.join(','), ...rows.map((row) => row.join(','))].join('\n');
 
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=notification_analytics.csv');
-    res.send(csv);
+    res.status(200).json({ data: csv, pagination: { total, page, limit, pages: Math.ceil(total / limit) } });
   } catch (error) {
     logger.error('Error exporting notification analytics:', error);
     res.status(500).json({ error: { message: 'Failed to export notification analytics' } });
@@ -1519,39 +1306,39 @@ export const getRestaurantMonitoring = async (_req: Request, res: Response): Pro
 // Reset monthly reservation quotas for all restaurants
 export const resetMonthlyQuotas = async (_req: Request, res: Response): Promise<void> => {
   try {
-    logger.info('Starting monthly quota reset for all restaurants');
-
-    // Find all self-service Starter plan restaurants
     const restaurants = await Restaurant.find({
       accountType: 'self-service',
       'subscription.plan': 'starter',
     });
 
-    let resetCount = 0;
-    const errors: string[] = [];
-
-    for (const restaurant of restaurants) {
-      try {
-        await restaurant.resetMonthlyReservationCount();
-        resetCount++;
-        logger.info(`Reset quota for restaurant: ${restaurant.name} (ID: ${restaurant._id})`);
-      } catch (error) {
-        const errorMsg = `Failed to reset quota for ${restaurant.name}: ${error}`;
-        logger.error(errorMsg);
-        errors.push(errorMsg);
-      }
+    if (restaurants.length === 0) {
+      res.status(200).json({ message: 'No Starter plan restaurants to reset', count: 0 });
+      return;
     }
 
-    logger.info(`Monthly quota reset completed. Success: ${resetCount}, Errors: ${errors.length}`);
+    const now = new Date();
+    const bulkOps = restaurants.map((r) => ({
+      updateOne: {
+        filter: { _id: r._id },
+        update: {
+          $set: {
+            'reservationQuota.monthlyCount': 0,
+            'reservationQuota.lastResetDate': now,
+            'reservationQuota.emailsSent.at80': false,
+            'reservationQuota.emailsSent.at90': false,
+            'reservationQuota.emailsSent.at100': false,
+          },
+        },
+      },
+    }));
+
+    const result = await Restaurant.bulkWrite(bulkOps);
+
+    logger.info(`Monthly quotas reset for ${result.modifiedCount} Starter plan restaurants`);
 
     res.status(200).json({
-      message: 'Monthly quota reset completed',
-      summary: {
-        totalRestaurants: restaurants.length,
-        successfulResets: resetCount,
-        errors: errors.length,
-      },
-      errors: errors.length > 0 ? errors : undefined,
+      message: 'Monthly quotas reset successfully',
+      count: result.modifiedCount,
     });
   } catch (error) {
     logger.error('Error resetting monthly quotas:', error);
@@ -1708,9 +1495,6 @@ export const manageSubscription = async (req: Request, res: Response): Promise<v
           // Remove Google review link
           restaurant.googleReviewLink = undefined;
 
-          // Remove custom slug
-          restaurant.publicSlug = undefined;
-
           // Delete server accounts
           await User.deleteMany({
             restaurantId: restaurant._id,
@@ -1721,7 +1505,7 @@ export const manageSubscription = async (req: Request, res: Response): Promise<v
             `Cleaned up Pro features for restaurant ${restaurant.name} (${id}) after downgrade to Starter`,
             {
               restaurantId: id,
-              featuresCleaned: ['widgetConfig', 'googleReviewLink', 'publicSlug', 'serverAccounts'],
+              featuresCleaned: ['widgetConfig', 'googleReviewLink', 'serverAccounts'],
             }
           );
 
@@ -1912,7 +1696,6 @@ export const manageSubscription = async (req: Request, res: Response): Promise<v
         if (activatePlan === 'starter') {
           restaurant.widgetConfig = undefined;
           restaurant.googleReviewLink = undefined;
-          restaurant.publicSlug = undefined;
           await User.deleteMany({
             restaurantId: restaurant._id,
             role: 'server',

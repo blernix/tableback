@@ -89,7 +89,9 @@ export interface SanitizedReservationInput {
   time: string;
   numberOfGuests: number;
   notes?: string;
-  _honeypot?: string; // Bot detection field
+  _honeypot?: string;
+  consentMarketing?: boolean;
+  consentDataProcessing?: boolean;
 }
 
 export function sanitizeReservationInput(input: any): SanitizedReservationInput {
@@ -102,5 +104,7 @@ export function sanitizeReservationInput(input: any): SanitizedReservationInput 
     numberOfGuests: parseInt(input.numberOfGuests) || 0,
     notes: input.notes ? sanitizeNotes(input.notes) : '',
     _honeypot: input._honeypot ? String(input._honeypot) : '',
+    consentMarketing: input.consentMarketing === true,
+    consentDataProcessing: input.consentDataProcessing === true,
   };
 }

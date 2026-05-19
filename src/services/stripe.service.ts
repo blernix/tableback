@@ -210,6 +210,18 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
 
     logger.info(`Restaurant ${restaurantId} subscription activated`);
 
+    // Activate the user account
+    try {
+      const user = await User.findOne({ restaurantId: restaurant._id });
+      if (user && user.status === 'inactive') {
+        user.status = 'active';
+        await user.save();
+        logger.info(`User ${user.email} activated for restaurant ${restaurantId}`);
+      }
+    } catch (err) {
+      logger.error('Error activating user:', err);
+    }
+
     // Send welcome and subscription confirmation emails
     try {
       // Find the user associated with this restaurant

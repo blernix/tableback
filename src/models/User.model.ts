@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 export interface IUser extends Document {
   email: string;
   password: string;
-  role: 'admin' | 'restaurant' | 'server';
+  role: 'admin' | 'restaurant' | 'server' | 'commercial';
   restaurantId?: mongoose.Types.ObjectId;
   status: 'active' | 'inactive';
   mustChangePassword: boolean;
@@ -39,7 +39,7 @@ const userSchema = new Schema<IUser>(
     },
     role: {
       type: String,
-      enum: ['admin', 'restaurant', 'server'],
+      enum: ['admin', 'restaurant', 'server', 'commercial'],
       required: [true, 'Role is required'],
     },
     restaurantId: {
