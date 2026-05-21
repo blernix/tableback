@@ -706,9 +706,12 @@ export async function sendQuotaWarningEmail(
  */
 export async function sendWelcomeEmail(
   user: { name?: string; email: string },
-  restaurant: { name: string }
+  restaurant: { name: string; trialDays?: number }
 ): Promise<EmailResult> {
   const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
+  const trialText = restaurant.trialDays != null && restaurant.trialDays > 0
+    ? `${restaurant.trialDays} jours d'essai gratuit`
+    : 'Votre abonnement démarre immédiatement';
 
   return sendEmail({
     to: user.email,
@@ -719,6 +722,7 @@ export async function sendWelcomeEmail(
       userName: user.name || 'Restaurateur',
       restaurantName: restaurant.name,
       dashboardLink,
+      trialText,
     },
   });
 }
@@ -901,6 +905,45 @@ export async function sendReminderEmail(
     replyTo: {
       email: restaurant.email,
       name: restaurant.name,
+    },
+  });
+}
+
+export async function sendCommercialInvitationEmail(
+  to: { name: string; email: string },
+  params: {
+    restaurantName: string;
+    plan: 'starter' | 'pro';
+    checkoutUrl: string;
+    password: string;
+    trialDays?: number;
+    discountPercent?: number;
+  }
+): Promise<EmailResult> {
+  const planLabel = params.plan === 'pro' ? 'Pro (69€/mois)' : 'Starter (39€/mois)';
+  const trialText = params.trialDays && params.trialDays > 0
+    ? `${params.trialDays} jours d'essai gratuit`
+    : 'Sans période d\'essai';
+  const discountText = params.discountPercent && params.discountPercent > 0
+    ? `-${params.discountPercent}% sur le premier mois · valable 24h`
+    : '';
+  const discountInfo = discountText
+    ? `${discountText}. Aucun prélèvement avant la fin de l'essai.`
+    : 'Aucun prélèvement avant la fin de l\'essai.';
+
+  return sendEmail({
+    to: to.email,
+    toName: to.name,
+    subject: `${to.name} — Finalisez votre inscription TableMaster`,
+    templateName: 'commercial-invitation',
+    params: {
+      restaurantName: params.restaurantName,
+      checkoutUrl: params.checkoutUrl,
+      email: to.email,
+      password: params.password,
+      planLabel,
+      trialText,
+      discountInfo,
     },
   });
 }

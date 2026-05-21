@@ -53,6 +53,8 @@ router.get('/restaurants/:id/subscription/sync-status', adminController.getSubsc
 
 // Commercial user management
 router.get('/commercials', adminController.getCommercialUsers);
+router.get('/commercials/:id', adminController.getCommercialDetail);
+router.delete('/commercials/:id', adminController.deleteCommercialUser);
 router.post('/commercials', adminController.createCommercialUser);
 
 export default router;

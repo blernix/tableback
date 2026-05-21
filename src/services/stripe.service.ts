@@ -21,9 +21,12 @@ export async function createCheckoutSession(params: {
   acceptedTerms?: boolean;
   successUrl?: string;
   cancelUrl?: string;
+  trialDays?: number;
+  couponId?: string;
+  referralCode?: string;
 }): Promise<Stripe.Checkout.Session> {
   try {
-    const { restaurantId, plan, email, acceptedTerms, successUrl, cancelUrl } = params;
+    const { restaurantId, plan, email, acceptedTerms, successUrl, cancelUrl, trialDays = 14, couponId, referralCode } = params;
 
     const priceId = STRIPE_CONFIG.products[plan].priceId;
 
@@ -46,18 +49,23 @@ export async function createCheckoutSession(params: {
         restaurantId,
         plan,
         acceptedTerms: acceptedTerms?.toString(),
+        trialDays: trialDays != null ? String(trialDays) : '0',
+        ...(referralCode ? { referralCode } : {}),
       },
       subscription_data: {
-        trial_period_days: 14,
+        ...(trialDays > 0 ? { trial_period_days: trialDays } : {}),
         metadata: {
           restaurantId,
           plan,
           acceptedTerms: acceptedTerms?.toString(),
+          trialDays: trialDays != null ? String(trialDays) : '0',
+          ...(referralCode ? { referralCode } : {}),
         },
       },
+      ...(couponId ? { discounts: [{ coupon: couponId }] } : {}),
       success_url: successUrl || STRIPE_CONFIG.urls.success,
       cancel_url: cancelUrl || STRIPE_CONFIG.urls.cancel,
-      allow_promotion_codes: true,
+      ...(couponId ? {} : { allow_promotion_codes: true }),
     } as any);
 
     logger.info(`Checkout session created for restaurant ${restaurantId}`, {
@@ -155,7 +163,8 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
  * Handle checkout session completed
  */
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promise<void> {
-  const { restaurantId, plan } = session.metadata || {};
+  const { restaurantId, plan, trialDays: trialDaysStr } = session.metadata || {};
+  const trialDays = parseInt(trialDaysStr || '14', 10);
 
   if (!restaurantId || !plan) {
     logger.error('Missing metadata in checkout session', { sessionId: session.id });
@@ -231,7 +240,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
         // Send welcome email (user doesn't have a name field, use restaurant name)
         await sendWelcomeEmail(
           { name: restaurant.name, email: user.email },
-          { name: restaurant.name }
+          { name: restaurant.name, trialDays }
         );
 
         // Send subscription confirmation email

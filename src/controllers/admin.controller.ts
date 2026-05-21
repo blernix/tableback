@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
 import mongoose from 'mongoose';
 import Restaurant from '../models/Restaurant.model';
 import User from '../models/User.model';
@@ -30,19 +31,22 @@ export const createCommercialUser = async (req: Request, res: Response): Promise
       return;
     }
 
+    const referralCode = `TM-COMM-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+
     const user = new User({
       email: validatedData.email,
       password: validatedData.password,
       role: 'commercial',
       status: 'active',
       mustChangePassword: false,
+      referralCode,
     });
     await user.save();
 
-    logger.info(`Commercial user created: ${user.email}`);
+    logger.info(`Commercial user created: ${user.email} (ref: ${referralCode})`);
 
     res.status(201).json({
-      user: { id: user._id, email: user.email, role: user.role },
+      user: { id: user._id, email: user.email, role: user.role, referralCode },
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -56,11 +60,83 @@ export const createCommercialUser = async (req: Request, res: Response): Promise
 
 export const getCommercialUsers = async (_req: Request, res: Response): Promise<void> => {
   try {
-    const users = await User.find({ role: 'commercial' }).select('email status createdAt').sort({ createdAt: -1 });
+    const users = await User.find({ role: 'commercial' }).select('email status createdAt referralCode').sort({ createdAt: -1 });
     res.status(200).json({ users });
   } catch (error) {
     logger.error('Error fetching commercial users:', error);
     res.status(500).json({ error: { message: 'Failed to fetch commercial users' } });
+  }
+};
+
+export const getCommercialDetail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = await User.findOne({ _id: req.params.id, role: 'commercial' })
+      .select('email referralCode firstName lastName phone photoUrl status createdAt');
+
+    if (!user) {
+      res.status(404).json({ error: { message: 'Commercial non trouvé' } });
+      return;
+    }
+
+    const filter = { createdBy: user._id };
+    const [
+      total, active, inactive, cancelled,
+      byPlan, mrrAgg, recent,
+    ] = await Promise.all([
+      Restaurant.countDocuments(filter),
+      Restaurant.countDocuments({ ...filter, status: 'active' }),
+      Restaurant.countDocuments({ ...filter, status: 'inactive' }),
+      Restaurant.countDocuments({ ...filter, 'subscription.status': 'cancelled' }),
+      Restaurant.aggregate([{ $match: { createdBy: user._id } }, { $group: { _id: '$subscription.plan', count: { $sum: 1 } } }]),
+      Restaurant.aggregate([
+        { $match: { createdBy: user._id, status: 'active', 'subscription.plan': { $in: ['starter', 'pro'] } } },
+        { $group: { _id: '$subscription.plan', count: { $sum: 1 } } },
+      ]),
+      Restaurant.find(filter).select('name email status createdAt subscription.plan').sort({ createdAt: -1 }).limit(20),
+    ]);
+
+    const starter = byPlan.find((s: any) => s._id === 'starter')?.count || 0;
+    const pro = byPlan.find((s: any) => s._id === 'pro')?.count || 0;
+    const activeStarter = mrrAgg.find((s: any) => s._id === 'starter')?.count || 0;
+    const activePro = mrrAgg.find((s: any) => s._id === 'pro')?.count || 0;
+    const mrr = activeStarter * 39 + activePro * 69;
+    const conversionRate = total > 0 ? Math.round((active / total) * 100) : 0;
+
+    res.status(200).json({
+      user,
+      stats: { total, active, inactive, cancelled, conversionRate, mrr, byPlan: { starter, pro }, activeStarter, activePro },
+      restaurants: recent,
+    });
+  } catch (error) {
+    logger.error('Error fetching commercial detail:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch commercial detail' } });
+  }
+};
+
+export const deleteCommercialUser = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const user = await User.findOne({ _id: req.params.id, role: 'commercial' });
+
+    if (!user) {
+      res.status(404).json({ error: { message: 'Commercial non trouvé' } });
+      return;
+    }
+
+    const email = user.email;
+    const referralCode = user.referralCode;
+
+    // Unlink restaurants from this commercial (keep createdBy for history but null it)
+    const unlinked = await Restaurant.updateMany({ createdBy: user._id }, { $set: { createdBy: null } });
+
+    // Delete the user
+    await User.findByIdAndDelete(user._id);
+
+    logger.info(`Commercial user deleted: ${email} (ref: ${referralCode}) — ${unlinked.modifiedCount} restaurants unlinked`);
+
+    res.status(200).json({ message: 'Commercial supprimé' });
+  } catch (error) {
+    logger.error('Error deleting commercial user:', error);
+    res.status(500).json({ error: { message: 'Failed to delete commercial user' } });
   }
 };
 

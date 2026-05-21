@@ -17,6 +17,15 @@ export interface IUser extends Document {
   acceptedTerms: boolean;
   acceptedTermsAt: Date;
   acceptedTermsVersion?: string;
+  objectives?: {
+    monthlySignups: number;
+    lastUpdated: Date;
+  };
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  photoUrl?: string;
+  referralCode?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -89,6 +98,15 @@ const userSchema = new Schema<IUser>(
       type: String,
       default: null,
     },
+    objectives: {
+      monthlySignups: { type: Number, default: 10 },
+      lastUpdated: { type: Date, default: null },
+    },
+    firstName: { type: String, default: null },
+    lastName: { type: String, default: null },
+    phone: { type: String, default: null },
+    photoUrl: { type: String, default: null },
+    referralCode: { type: String, default: null, unique: true, sparse: true },
   },
   {
     timestamps: true,

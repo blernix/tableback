@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Finalisez votre inscription - TableMaster</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-weight: 300; background-color: #FAFAFA; color: #2A2A2A;">
+
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #FAFAFA; min-height: 100vh;">
+    <tr>
+      <td align="center" style="padding: 60px 20px;">
+
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #FFFFFF; border: 1px solid #E5E5E5;">
+
+          <!-- Header -->
+          <tr>
+            <td style="padding: 40px 30px 30px; border-bottom: 1px solid #E5E5E5;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 24px; font-weight: 400; color: #0066FF; letter-spacing: -0.5px; margin-bottom: 8px;">TableMaster</div>
+                    <div style="font-size: 32px; margin: 20px 0; color: #0066FF;">•</div>
+                    <div style="font-size: 20px; font-weight: 400; color: #2A2A2A; margin-top: 16px;">Finalisez votre inscription</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Content -->
+          <tr>
+            <td style="padding: 30px 30px 20px;">
+              <p style="margin: 0 0 20px 0; font-size: 16px; line-height: 1.6; color: #2A2A2A;">
+                Bonjour,
+              </p>
+              <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #666666;">
+                Votre compte restaurant <strong style="font-weight: 400;">{{restaurantName}}</strong> a été créé par notre équipe commerciale sur <strong style="color: #0066FF; font-weight: 400;">TableMaster</strong>.
+              </p>
+              <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #666666;">
+                Pour activer votre compte<span class="appleLink"> et bénéficier de <strong>{{trialText}}</strong></span>, veuillez cliquer sur le lien ci-dessous :
+              </p>
+            </td>
+          </tr>
+
+          <!-- Payment Button -->
+          <tr>
+            <td style="padding: 0 30px 30px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <a href="{{checkoutUrl}}" style="display: inline-block; background-color: #0066FF; color: #FFFFFF; padding: 16px 48px; text-decoration: none; font-size: 16px; font-weight: 400; border: none;">
+                      Finaliser mon inscription
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Credentials Box -->
+          <tr>
+            <td style="padding: 0 30px 30px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #E5E5E5; background-color: #FAFAFA;">
+                <tr>
+                  <td style="padding: 24px;">
+                    <div style="font-size: 14px; font-weight: 400; color: #2A2A2A; margin-bottom: 16px;">
+                      📋 Vos identifiants de connexion
+                    </div>
+                    <div style="font-size: 13px; color: #666666; margin-bottom: 12px;">
+                      Après activation de votre compte, connectez-vous avec ces identifiants :
+                    </div>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #FFFFFF; border: 1px solid #E5E5E5;">
+                      <tr>
+                        <td style="padding: 12px 16px; border-bottom: 1px solid #E5E5E5; font-size: 13px; color: #666666;">Email</td>
+                        <td style="padding: 12px 16px; border-bottom: 1px solid #E5E5E5; font-size: 13px; color: #2A2A2A; font-weight: 400;">{{email}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 12px 16px; font-size: 13px; color: #666666;">Mot de passe</td>
+                        <td style="padding: 12px 16px; font-size: 13px; color: #2A2A2A; font-weight: 400; font-family: monospace;">{{password}}</td>
+                      </tr>
+                    </table>
+                    <div style="font-size: 12px; color: #B8860B; margin-top: 12px; line-height: 1.5;">
+                      ⚠️ Vous devrez changer votre mot de passe lors de votre première connexion.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Plan Info -->
+          <tr>
+            <td style="padding: 0 30px 30px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #EBF4FF; border-left: 2px solid #0066FF;">
+                <tr>
+                  <td style="padding: 16px;">
+                    <div style="font-size: 13px; color: #0066FF; line-height: 1.5;">
+                      {{planLabel}} — {{trialText}}. {{discountInfo}}
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px; border-top: 1px solid #E5E5E5; background-color: #FAFAFA;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 14px; color: #666666; margin-bottom: 8px;">
+                      <a href="https://tablemaster.fr" style="color: #0066FF; text-decoration: none; font-weight: 400;">TableMaster</a>
+                    </div>
+                    <div style="font-size: 12px; color: #999999; line-height: 1.5;">
+                      La solution professionnelle de gestion de réservations
+                    </div>
+                    <div style="font-size: 11px; color: #999999; margin-top: 16px;">
+                      © 2026 TableMaster. Tous droits réservés.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
