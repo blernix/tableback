@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import User from '../models/User.model';
 import logger from '../utils/logger';
 import { z } from 'zod';
@@ -28,7 +29,7 @@ export const getServerUsers = async (req: Request, res: Response): Promise<void>
       restaurantId: req.user.restaurantId,
       role: 'server',
     })
-      .select('email status createdAt updatedAt')
+      .select('email status createdAt updatedAt trackingId')
       .sort({ createdAt: -1 });
 
     // Transform _id to id for consistent API response
@@ -38,6 +39,7 @@ export const getServerUsers = async (req: Request, res: Response): Promise<void>
       role: 'server' as const,
       status: server.status,
       restaurantId: server.restaurantId?.toString(),
+      trackingId: server.trackingId,
       createdAt: server.createdAt,
       updatedAt: server.updatedAt,
     }));
@@ -67,11 +69,13 @@ export const createServerUser = async (req: Request, res: Response): Promise<voi
     }
 
     // Create server user
+    const trackingId = `TM-SRV-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     const server = new User({
       email: validatedData.email,
       password: validatedData.password,
       role: 'server',
       restaurantId: req.user.restaurantId,
+      trackingId,
     });
 
     await server.save();
@@ -85,6 +89,7 @@ export const createServerUser = async (req: Request, res: Response): Promise<voi
         role: server.role,
         status: server.status,
         restaurantId: server.restaurantId,
+        trackingId: server.trackingId,
         createdAt: server.createdAt,
       },
     });

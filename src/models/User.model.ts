@@ -26,6 +26,7 @@ export interface IUser extends Document {
   phone?: string;
   photoUrl?: string;
   referralCode?: string;
+  trackingId?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -107,6 +108,7 @@ const userSchema = new Schema<IUser>(
     phone: { type: String, default: null },
     photoUrl: { type: String, default: null },
     referralCode: { type: String, default: null, unique: true, sparse: true },
+    trackingId: { type: String, default: null, unique: true, sparse: true },
   },
   {
     timestamps: true,

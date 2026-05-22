@@ -20,6 +20,7 @@ import notificationRoutes from './routes/notification.routes';
 import twoFactorRoutes from './routes/twoFactor.routes';
 import billingRoutes from './routes/billing.routes';
 import commercialRoutes from './routes/commercial.routes';
+import profileRoutes from './routes/profile.routes';
 import { sanitizeRequest } from './middleware/sanitize.middleware';
 import { handleWebhook } from './controllers/billing.controller';
 
@@ -230,6 +231,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/2fa', twoFactorRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/commercial', commercialRoutes);
+app.use('/api/profile', profileRoutes);
 app.use('/api/public', publicRoutes);
 
 // Debug route for testing Sentry (intentional error)

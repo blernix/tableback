@@ -111,7 +111,7 @@ router.get('/customers', authorizeRole(['restaurant', 'server']), customerContro
 router.get('/customers/search', authorizeRole(['restaurant', 'server']), customerController.searchCustomers);
 router.get('/customers/export', authorizeRole(['restaurant']), customerController.exportCustomers);
 router.get('/customers/:id', authorizeRole(['restaurant', 'server']), customerController.getCustomerById);
-router.post('/customers', authorizeRole(['restaurant']), customerController.createCustomer);
-router.put('/customers/:id', authorizeRole(['restaurant']), customerController.updateCustomer);
+router.post('/customers', authorizeRole(['restaurant', 'server']), customerController.createCustomer);
+router.put('/customers/:id', authorizeRole(['restaurant', 'server']), customerController.updateCustomer);
 
 export default router;

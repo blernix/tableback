@@ -303,7 +303,7 @@ const updateProfileSchema = z.object({
 
 export const getProfile = async (req: Request, res: Response): Promise<void> => {
   try {
-    const user = await User.findById(req.user!.userId).select('email firstName lastName phone photoUrl role');
+    const user = await User.findById(req.user!.userId).select('email firstName lastName phone photoUrl role trackingId');
     res.status(200).json({ user });
   } catch (error) {
     logger.error('Error fetching commercial profile:', error);
