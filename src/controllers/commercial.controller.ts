@@ -9,6 +9,7 @@ import { createCheckoutSession } from '../services/stripe.service';
 import { sendCommercialInvitationEmail } from '../services/emailService';
 import { uploadToGCS, deleteFromGCS } from '../config/storage.config';
 import { stripe } from '../config/stripe.config';
+import CommercialNote from '../models/CommercialNote.model';
 
 const createRestaurantSchema = z.object({
   name: z.string().min(1, 'Le nom est requis').trim(),
@@ -153,8 +154,16 @@ export const getMyRestaurants = async (req: Request, res: Response): Promise<voi
   try {
     const page = Math.max(1, parseInt(req.query.page as string) || 1);
     const limit = Math.min(Math.max(1, parseInt(req.query.limit as string) || 20), 100);
+    const search = (req.query.search as string)?.trim() || '';
 
-    const filter = { createdBy: req.user!.userId };
+    const filter: Record<string, any> = { createdBy: req.user!.userId };
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+      ];
+    }
+
     const [restaurants, total] = await Promise.all([
       Restaurant.find(filter).select('name email address phone status createdAt subscription.plan').sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
       Restaurant.countDocuments(filter),
@@ -379,5 +388,40 @@ export const uploadPhoto = async (req: Request, res: Response): Promise<void> =>
   } catch (error) {
     logger.error('Error uploading commercial photo:', error);
     res.status(500).json({ error: { message: 'Failed to upload photo' } });
+  }
+};
+
+export const getRestaurantNote = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const note = await CommercialNote.findOne({
+      restaurantId: req.params.id,
+      userId: req.user!.userId,
+    });
+
+    res.status(200).json({ note: note?.text || '' });
+  } catch (error) {
+    logger.error('Error fetching commercial note:', error);
+    res.status(500).json({ error: { message: 'Failed to fetch note' } });
+  }
+};
+
+export const updateRestaurantNote = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { text } = req.body;
+    if (typeof text !== 'string' || text.length > 2000) {
+      res.status(400).json({ error: { message: 'Note entre 0 et 2000 caractères' } });
+      return;
+    }
+
+    const note = await CommercialNote.findOneAndUpdate(
+      { restaurantId: req.params.id, userId: req.user!.userId },
+      { text },
+      { upsert: true, new: true }
+    );
+
+    res.status(200).json({ note: note.text });
+  } catch (error) {
+    logger.error('Error updating commercial note:', error);
+    res.status(500).json({ error: { message: 'Failed to update note' } });
   }
 };

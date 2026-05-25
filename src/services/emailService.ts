@@ -285,8 +285,8 @@ function generatePlainTextFromHtml(html: string): string {
  * @param user - User object with email, name, and _id
  */
 export async function sendPasswordResetEmail(user: User & { _id: string }): Promise<EmailResult> {
-  // Generate JWT token for password reset
-  const resetToken = generatePasswordResetToken(user._id);
+  // Generate random token stored in DB (single-use)
+  const resetToken = await generatePasswordResetToken(user._id);
   const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
 
   return sendEmail({
@@ -297,6 +297,21 @@ export async function sendPasswordResetEmail(user: User & { _id: string }): Prom
     params: {
       userName: user.name || 'Utilisateur',
       resetLink,
+    },
+    });
+}
+
+export async function sendPasswordChangedNotification(
+  email: string
+): Promise<EmailResult> {
+  return sendEmail({
+    to: email,
+    toName: email,
+    subject: 'Votre mot de passe a été modifié - TableMaster',
+    templateName: 'password-changed',
+    params: {
+      userName: email,
+      contactEmail: process.env.EMAIL_SENDER || 'contact@tablemaster.fr',
     },
   });
 }

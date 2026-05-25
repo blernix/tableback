@@ -1,22 +1,17 @@
 import jwt, { SignOptions } from 'jsonwebtoken';
+import crypto from 'crypto';
 import logger from '../utils/logger';
+import User from '../models/User.model';
 
-// Token types
 export enum TokenType {
   PASSWORD_RESET = 'password-reset',
   RESERVATION_CANCEL = 'reservation-cancel',
 }
 
-// JWT Payload interfaces
 interface BaseTokenPayload {
   type: TokenType;
   iat?: number;
   exp?: number;
-}
-
-interface PasswordResetPayload extends BaseTokenPayload {
-  type: TokenType.PASSWORD_RESET;
-  userId: string;
 }
 
 interface ReservationCancelPayload extends BaseTokenPayload {
@@ -25,121 +20,73 @@ interface ReservationCancelPayload extends BaseTokenPayload {
   restaurantId: string;
 }
 
-type TokenPayload = PasswordResetPayload | ReservationCancelPayload;
+type TokenPayload = ReservationCancelPayload;
 
-// Token validation result
 interface TokenValidationResult<T> {
   valid: boolean;
   data?: T;
   error?: string;
 }
 
-// JWT Secret from environment
 const JWT_SECRET = process.env.JWT_SECRET as string;
 
 if (!JWT_SECRET) {
   throw new Error('JWT_SECRET is required in environment variables');
 }
 
-// Token expiration times
 const TOKEN_EXPIRATION = {
-  PASSWORD_RESET: '24h', // 24 hours
-  RESERVATION_CANCEL: '48h', // 48 hours (enough time before reservation)
+  PASSWORD_RESET_HOURS: 1,
+  RESERVATION_CANCEL: '48h',
 };
 
 /**
- * Generate a password reset token
- *
- * @param userId - User ID
- * @returns JWT token string
+ * Generate a password reset token (random, stored in DB, single-use)
  */
-export function generatePasswordResetToken(userId: string): string {
-  const payload: PasswordResetPayload = {
-    type: TokenType.PASSWORD_RESET,
-    userId,
-  };
+export async function generatePasswordResetToken(userId: string): Promise<string> {
+  const token = crypto.randomBytes(32).toString('hex');
 
-  const token = jwt.sign(payload, JWT_SECRET, {
-    expiresIn: TOKEN_EXPIRATION.PASSWORD_RESET,
-  } as SignOptions);
-
-  logger.info('Password reset token generated', {
-    userId,
-    expiresIn: TOKEN_EXPIRATION.PASSWORD_RESET,
+  await User.findByIdAndUpdate(userId, {
+    passwordResetToken: token,
+    passwordResetExpires: new Date(Date.now() + TOKEN_EXPIRATION.PASSWORD_RESET_HOURS * 60 * 60 * 1000),
   });
 
+  logger.info('Password reset token stored', { userId });
   return token;
 }
 
 /**
- * Validate a password reset token
- *
- * @param token - JWT token string
- * @returns Validation result with userId if valid
+ * Validate a password reset token (DB lookup, single-use)
  */
-export function validatePasswordResetToken(
+export async function validatePasswordResetToken(
   token: string
-): TokenValidationResult<{ userId: string }> {
+): Promise<TokenValidationResult<{ userId: string }>> {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
-
-    // Check token type
-    if (decoded.type !== TokenType.PASSWORD_RESET) {
-      logger.warn('Invalid token type for password reset', {
-        expectedType: TokenType.PASSWORD_RESET,
-        receivedType: decoded.type,
-      });
-      return {
-        valid: false,
-        error: 'Invalid token type',
-      };
-    }
-
-    const payload = decoded as PasswordResetPayload;
-
-    logger.info('Password reset token validated', {
-      userId: payload.userId,
+    const user = await User.findOne({
+      passwordResetToken: token,
+      passwordResetExpires: { $gt: new Date() },
     });
 
-    return {
-      valid: true,
-      data: { userId: payload.userId },
-    };
+    if (!user) {
+      return { valid: false, error: 'Token invalide ou expiré' };
+    }
+
+    return { valid: true, data: { userId: user._id.toString() } };
   } catch (error: any) {
-    if (error.name === 'TokenExpiredError') {
-      logger.warn('Password reset token expired', { token });
-      return {
-        valid: false,
-        error: 'Token expired',
-      };
-    }
-
-    if (error.name === 'JsonWebTokenError') {
-      logger.warn('Invalid password reset token', {
-        error: error.message,
-      });
-      return {
-        valid: false,
-        error: 'Invalid token',
-      };
-    }
-
-    logger.error('Error validating password reset token', {
-      error: error.message,
-    });
-    return {
-      valid: false,
-      error: 'Token validation failed',
-    };
+    logger.error('Error validating password reset token:', error);
+    return { valid: false, error: 'Token validation failed' };
   }
 }
 
 /**
- * Generate a reservation cancellation token
- *
- * @param reservationId - Reservation ID
- * @returns JWT token string
+ * Clear the password reset token after successful use
  */
+export async function clearPasswordResetToken(userId: string): Promise<void> {
+  await User.findByIdAndUpdate(userId, {
+    passwordResetToken: null,
+    passwordResetExpires: null,
+  });
+}
+
 export function generateReservationCancelToken(reservationId: string, restaurantId: string): string {
   const payload: ReservationCancelPayload = {
     type: TokenType.RESERVATION_CANCEL,
@@ -151,124 +98,36 @@ export function generateReservationCancelToken(reservationId: string, restaurant
     expiresIn: TOKEN_EXPIRATION.RESERVATION_CANCEL,
   } as SignOptions);
 
-  logger.info('Reservation cancel token generated', {
-    reservationId,
-    restaurantId,
-    expiresIn: TOKEN_EXPIRATION.RESERVATION_CANCEL,
-  });
-
+  logger.info('Reservation cancel token generated', { reservationId, restaurantId });
   return token;
 }
 
-/**
- * Validate a reservation cancellation token
- *
- * @param token - JWT token string
- * @returns Validation result with reservationId if valid
- */
 export function validateReservationCancelToken(
   token: string
 ): TokenValidationResult<{ reservationId: string; restaurantId: string }> {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
 
-    // Check token type
     if (decoded.type !== TokenType.RESERVATION_CANCEL) {
-      logger.warn('Invalid token type for reservation cancel', {
-        expectedType: TokenType.RESERVATION_CANCEL,
-        receivedType: decoded.type,
-      });
-      return {
-        valid: false,
-        error: 'Invalid token type',
-      };
+      return { valid: false, error: 'Invalid token type' };
     }
 
     const payload = decoded as ReservationCancelPayload;
-
-    logger.info('Reservation cancel token validated', {
-      reservationId: payload.reservationId,
-      restaurantId: payload.restaurantId,
-    });
-
-    return {
-      valid: true,
-      data: { reservationId: payload.reservationId, restaurantId: payload.restaurantId },
-    };
+    return { valid: true, data: { reservationId: payload.reservationId, restaurantId: payload.restaurantId } };
   } catch (error: any) {
-    if (error.name === 'TokenExpiredError') {
-      logger.warn('Reservation cancel token expired', { token });
-      return {
-        valid: false,
-        error: 'Token expired',
-      };
-    }
-
-    if (error.name === 'JsonWebTokenError') {
-      logger.warn('Invalid reservation cancel token', {
-        error: error.message,
-      });
-      return {
-        valid: false,
-        error: 'Invalid token',
-      };
-    }
-
-    logger.error('Error validating reservation cancel token', {
-      error: error.message,
-    });
-    return {
-      valid: false,
-      error: 'Token validation failed',
-    };
+    if (error.name === 'TokenExpiredError') return { valid: false, error: 'Token expired' };
+    if (error.name === 'JsonWebTokenError') return { valid: false, error: 'Invalid token' };
+    return { valid: false, error: 'Token validation failed' };
   }
 }
 
-/**
- * Generic token validation (auto-detects type)
- *
- * @param token - JWT token string
- * @returns Validation result with decoded payload
- */
-export function validateToken(
-  token: string
-): TokenValidationResult<TokenPayload> {
+export function validateToken(token: string): TokenValidationResult<TokenPayload> {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
-
-    logger.info('Token validated', {
-      type: decoded.type,
-    });
-
-    return {
-      valid: true,
-      data: decoded,
-    };
+    return { valid: true, data: decoded };
   } catch (error: any) {
-    if (error.name === 'TokenExpiredError') {
-      logger.warn('Token expired', { token });
-      return {
-        valid: false,
-        error: 'Token expired',
-      };
-    }
-
-    if (error.name === 'JsonWebTokenError') {
-      logger.warn('Invalid token', {
-        error: error.message,
-      });
-      return {
-        valid: false,
-        error: 'Invalid token',
-      };
-    }
-
-    logger.error('Error validating token', {
-      error: error.message,
-    });
-    return {
-      valid: false,
-      error: 'Token validation failed',
-    };
+    if (error.name === 'TokenExpiredError') return { valid: false, error: 'Token expired' };
+    if (error.name === 'JsonWebTokenError') return { valid: false, error: 'Invalid token' };
+    return { valid: false, error: 'Token validation failed' };
   }
 }

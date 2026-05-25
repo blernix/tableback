@@ -18,5 +18,7 @@ router.get('/profile', commercialController.getProfile);
 router.put('/profile', commercialController.updateProfile);
 router.put('/profile/password', commercialController.changePassword);
 router.post('/profile/photo', upload.single('photo'), commercialController.uploadPhoto);
+router.get('/restaurants/:id/notes', commercialController.getRestaurantNote);
+router.put('/restaurants/:id/notes', commercialController.updateRestaurantNote);
 
 export default router;

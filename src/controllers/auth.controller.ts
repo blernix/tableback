@@ -6,8 +6,8 @@ import Restaurant from '../models/Restaurant.model';
 import { generateToken } from '../utils/jwt';
 import logger from '../utils/logger';
 import { z } from 'zod';
-import { sendPasswordResetEmail } from '../services/emailService';
-import { validatePasswordResetToken } from '../services/tokenService';
+import { sendPasswordResetEmail, sendPasswordChangedNotification } from '../services/emailService';
+import { validatePasswordResetToken, clearPasswordResetToken } from '../services/tokenService';
 import { generateTempToken } from '../utils/tempToken';
 import { createCheckoutSession } from '../services/stripe.service';
 import { generateShortCode } from '../utils/slugGenerator';
@@ -361,8 +361,8 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
   try {
     const validatedData = resetPasswordSchema.parse(req.body);
 
-    // Validate the reset token
-    const tokenValidation = validatePasswordResetToken(validatedData.token);
+    // Validate the reset token (DB lookup)
+    const tokenValidation = await validatePasswordResetToken(validatedData.token);
 
     if (!tokenValidation.valid) {
       res.status(400).json({
@@ -389,7 +389,16 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
 
     // Update password (will be hashed by the pre-save hook in User model)
     user.password = validatedData.newPassword;
+    user.mustChangePassword = false;
     await user.save();
+
+    // Invalidate the token so it can't be reused
+    await clearPasswordResetToken(user._id.toString());
+
+    // Send notification email
+    sendPasswordChangedNotification(user.email).catch((err) =>
+      logger.error('Failed to send password changed notification:', err)
+    );
 
     logger.info(`Password reset successful for user: ${user.email}`);
 
