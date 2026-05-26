@@ -247,7 +247,7 @@ describe('Auth Controller - Password Reset', () => {
     it('should return validation error for short password', async () => {
       mockRequest.body = {
         token: 'valid-token',
-        newPassword: '123', // Too short
+        newPassword: '123',
       };
 
       await resetPassword(mockRequest as Request, mockResponse as Response);
