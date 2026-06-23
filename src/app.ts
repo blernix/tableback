@@ -34,7 +34,8 @@ const app: Application = express();
 
 
 // Configuration trust proxy pour détection correcte d'IP derrière Nginx
-app.set('trust proxy', true);
+// 1 = trust first proxy (Nginx), suffisant pour un reverse proxy unique
+app.set('trust proxy', 1);
 // Stripe webhook endpoint needs raw body (before JSON parsing)
 // This must come BEFORE express.json() middleware
 // Handle webhook directly here to preserve raw body
