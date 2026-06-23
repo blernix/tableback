@@ -33,6 +33,7 @@ const envConfig: EnvValidation = {
     VAPID_PRIVATE_KEY: 'VAPID private key for web push notifications',
     VAPID_SUBJECT: 'VAPID subject (mailto: email address)',
     PUSH_ENABLED: 'Enable push notifications (true/false, default: true)',
+    ENCRYPTION_KEY: 'Encryption key for 2FA secrets (min 32 chars, required for 2FA)',
   },
 };
 
@@ -127,6 +128,11 @@ export function validateEnv(): void {
     
     if (adminPassword === 'admin123') {
       logger.warn('ADMIN_PASSWORD is using default value in production. This is a serious security risk!');
+    }
+
+    if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length < 32) {
+      logger.error('ENCRYPTION_KEY is not set or too short (min 32 chars) in production. 2FA encryption is insecure!');
+      throw new Error('ENCRYPTION_KEY is required in production (min 32 characters). Generate with: openssl rand -hex 32');
     }
   }
 }

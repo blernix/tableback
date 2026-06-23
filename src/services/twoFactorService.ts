@@ -10,9 +10,34 @@ authenticator.options = {
   window: 2,
 };
 
-// Configuration
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET || 'default-encryption-key-for-dev-only';
 const ALGORITHM = 'aes-256-gcm';
+
+function getEncryptionKey(): string {
+  const key = process.env.ENCRYPTION_KEY;
+
+  if (key && key.length >= 32) {
+    return key;
+  }
+
+  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+    const fallback = process.env.ENCRYPTION_KEY || process.env.JWT_SECRET;
+    if (!fallback) {
+      throw new Error(
+        'ENCRYPTION_KEY is not set. 2FA encryption requires ENCRYPTION_KEY (min 32 chars). ' +
+          'In development, set ENCRYPTION_KEY in your .env file.'
+      );
+    }
+    logger.warn(
+      '⚠️  ENCRYPTION_KEY is not set or too short — falling back to JWT_SECRET for development only. ' +
+        'Set ENCRYPTION_KEY in production.'
+    );
+    return fallback;
+  }
+
+  throw new Error(
+    'ENCRYPTION_KEY is required in production. Set ENCRYPTION_KEY (min 32 chars) in your .env file.'
+  );
+}
 
 export interface TwoFactorSetup {
   secret: string;
@@ -28,8 +53,9 @@ export interface TwoFactorVerificationResult {
  * Encrypt sensitive data (secret, recovery codes)
  */
 function encrypt(text: string): { encrypted: string; iv: string; authTag: string } {
+  const key = getEncryptionKey();
   const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv(ALGORITHM, Buffer.from(ENCRYPTION_KEY.padEnd(32).slice(0, 32)), iv);
+  const cipher = crypto.createCipheriv(ALGORITHM, Buffer.from(key.padEnd(32).slice(0, 32)), iv);
   
   let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');
@@ -42,9 +68,10 @@ function encrypt(text: string): { encrypted: string; iv: string; authTag: string
  * Decrypt sensitive data
  */
 function decrypt(encrypted: string, iv: string, authTag: string): string {
+  const key = getEncryptionKey();
   const decipher = crypto.createDecipheriv(
     ALGORITHM,
-    Buffer.from(ENCRYPTION_KEY.padEnd(32).slice(0, 32)),
+    Buffer.from(key.padEnd(32).slice(0, 32)),
     Buffer.from(iv, 'hex')
   );
   

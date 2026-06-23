@@ -180,6 +180,9 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
 
   // Update restaurant with Stripe customer ID
   if (session.customer) {
+    const wasAlreadyActive = restaurant.status === 'active';
+    const isSameSubscription = restaurant.subscription?.stripeSubscriptionId === session.subscription;
+
     // Activate restaurant status
     restaurant.status = 'active';
 
@@ -190,32 +193,39 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
       stripeSubscriptionId: session.subscription as string,
     };
 
-    // Initialize reservation quota based on plan
-    if (plan === 'starter') {
-      restaurant.reservationQuota = {
-        monthlyCount: 0,
-        lastResetDate: new Date(),
-        limit: 400,
-        emailsSent: {
-          at80: false,
-          at90: false,
-          at100: false,
-        },
-      };
-    } else if (plan === 'pro') {
-      restaurant.reservationQuota = {
-        monthlyCount: 0,
-        lastResetDate: new Date(),
-        limit: -1, // Unlimited
-        emailsSent: {
-          at80: false,
-          at90: false,
-          at100: false,
-        },
-      };
+    // Initialize reservation quota based on plan (only if not already set)
+    if (!restaurant.reservationQuota || restaurant.reservationQuota.limit === undefined) {
+      if (plan === 'starter') {
+        restaurant.reservationQuota = {
+          monthlyCount: 0,
+          lastResetDate: new Date(),
+          limit: 400,
+          emailsSent: {
+            at80: false,
+            at90: false,
+            at100: false,
+          },
+        };
+      } else if (plan === 'pro') {
+        restaurant.reservationQuota = {
+          monthlyCount: 0,
+          lastResetDate: new Date(),
+          limit: -1,
+          emailsSent: {
+            at80: false,
+            at90: false,
+            at100: false,
+          },
+        };
+      }
     }
 
     await restaurant.save();
+
+    if (wasAlreadyActive && isSameSubscription) {
+      logger.info(`Restaurant ${restaurantId} already active with same subscription — skipping emails (idempotent webhook)`);
+      return;
+    }
 
     logger.info(`Restaurant ${restaurantId} subscription activated`);
 

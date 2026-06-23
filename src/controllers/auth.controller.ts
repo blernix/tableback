@@ -6,7 +6,7 @@ import Restaurant from '../models/Restaurant.model';
 import { generateToken } from '../utils/jwt';
 import logger from '../utils/logger';
 import { z } from 'zod';
-import { sendPasswordResetEmail, sendPasswordChangedNotification } from '../services/emailService';
+import { sendPasswordResetEmail, sendPasswordChangedNotification, sendPaymentCompletionEmail } from '../services/emailService';
 import { validatePasswordResetToken, clearPasswordResetToken } from '../services/tokenService';
 import { generateTempToken } from '../utils/tempToken';
 import { createCheckoutSession } from '../services/stripe.service';
@@ -15,7 +15,7 @@ import { generateShortCode } from '../utils/slugGenerator';
 // Validation schemas
 const registerSchema = z.object({
   email: z.string().email('Invalid email format'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
   role: z.enum(['admin', 'restaurant', 'commercial']),
   restaurantId: z.string().optional(),
 });
@@ -31,12 +31,12 @@ const forgotPasswordSchema = z.object({
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1, 'Token is required'),
-  newPassword: z.string().min(6, 'Password must be at least 6 characters'),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
-  newPassword: z.string().min(6, 'New password must be at least 6 characters'),
+  newPassword: z.string().min(8, 'New password must be at least 8 characters'),
 });
 
 const changeEmailSchema = z.object({
@@ -133,7 +133,59 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     // Check if user is active
     if (user.status !== 'active') {
-      res.status(403).json({ error: { message: 'Account is inactive' } });
+      const isSelfService = user.role === 'restaurant' && user.restaurantId;
+
+      if (isSelfService) {
+        const restaurant = await Restaurant.findById(user.restaurantId);
+        if (restaurant && restaurant.accountType === 'self-service') {
+          let checkoutUrl: string | null = null;
+
+          try {
+            const checkoutSession = await createCheckoutSession({
+              restaurantId: restaurant._id.toString(),
+              plan: restaurant.subscription?.plan || 'starter',
+              email: user.email,
+              acceptedTerms: user.acceptedTerms,
+              successUrl: `${process.env.FRONTEND_URL}/signup/success?session_id={CHECKOUT_SESSION_ID}`,
+              cancelUrl: `${process.env.FRONTEND_URL}/login`,
+            });
+            checkoutUrl = checkoutSession.url || null;
+          } catch (stripeError) {
+            logger.error('Failed to create checkout session during inactive login:', stripeError);
+          }
+
+          if (checkoutUrl) {
+            // Send payment reminder email async
+            sendPaymentCompletionEmail(
+              { name: restaurant.name, email: user.email },
+              checkoutUrl
+            ).catch((err) => logger.error('Failed to send payment reminder on login:', err));
+
+            res.status(200).json({
+              needsPayment: true,
+              checkoutUrl,
+              message: 'Veuillez compléter le paiement pour activer votre compte.',
+            });
+          } else {
+            res.status(403).json({
+              error: {
+                message: 'Votre compte n\'est pas encore activé. Une erreur est survenue lors de la création du lien de paiement. Veuillez réessayer.',
+                code: 'ACCOUNT_INACTIVE',
+                needsPayment: true,
+              },
+            });
+          }
+          return;
+        }
+      }
+
+      res.status(403).json({
+        error: {
+          message: 'Ce compte a été désactivé. Veuillez contacter votre administrateur.',
+          code: 'ACCOUNT_INACTIVE',
+          needsPayment: false,
+        },
+      });
       return;
     }
 
@@ -574,7 +626,7 @@ const signupSchema = z.object({
 
   // Owner info
   ownerEmail: z.string().email('Invalid email format'),
-  ownerPassword: z.string().min(6, 'Password must be at least 6 characters'),
+  ownerPassword: z.string().min(8, 'Password must be at least 8 characters'),
   acceptedTerms: z.boolean().refine((val) => val === true, {
     message: 'You must accept the terms and conditions',
   }),
@@ -583,6 +635,9 @@ const signupSchema = z.object({
   plan: z.enum(['starter', 'pro'], {
     errorMap: () => ({ message: 'Plan must be either starter or pro' }),
   }),
+
+  // Honeypot field (must be empty — bots fill this in)
+  website: z.string().max(0, 'Invalid submission').optional(),
 });
 
 export const signup = async (req: Request, res: Response): Promise<void> => {
@@ -616,13 +671,11 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       phone: validatedData.restaurantPhone,
       email: validatedData.restaurantEmail,
       accountType: 'self-service',
-      status: 'inactive', // Will be activated after successful payment
+      status: 'inactive',
       subscription: {
         plan: validatedData.plan,
       },
-      // Vanity URL system - generate short code for pretty URLs
-      publicSlug: generateShortCode(8), // e.g. "x7z9mq2p"
-      // Default opening hours (can be customized later)
+      publicSlug: generateShortCode(8),
       openingHours: {
         monday: { closed: false, slots: [] },
         tuesday: { closed: false, slots: [] },
@@ -635,7 +688,6 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     });
 
     await restaurant.save();
-
     logger.info(`Self-service restaurant created: ${restaurant.name} (${restaurant._id})`);
 
     // Create owner user
@@ -644,32 +696,42 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       password: validatedData.ownerPassword,
       role: 'restaurant',
       restaurantId: restaurant._id,
-      status: 'inactive', // Activated after Stripe payment confirmed via webhook
+      status: 'inactive',
       acceptedTerms: validatedData.acceptedTerms,
       acceptedTermsAt: new Date(),
       acceptedTermsVersion: '1.0',
     });
 
     await owner.save();
-
     logger.info(`Owner user created: ${owner.email} for restaurant ${restaurant._id}`);
 
-    // Create Stripe Checkout Session
-    const checkoutSession = await createCheckoutSession({
-      restaurantId: restaurant._id.toString(),
-      plan: validatedData.plan,
-      email: validatedData.ownerEmail,
-      acceptedTerms: validatedData.acceptedTerms,
-      successUrl: `${process.env.FRONTEND_URL}/signup/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${process.env.FRONTEND_URL}/signup/cancel`,
-    });
+    // Create Stripe Checkout Session (non-blocking — account stays even if this fails)
+    let checkoutUrl: string | null = null;
+    try {
+      const checkoutSession = await createCheckoutSession({
+        restaurantId: restaurant._id.toString(),
+        plan: validatedData.plan,
+        email: validatedData.ownerEmail,
+        acceptedTerms: validatedData.acceptedTerms,
+        successUrl: `${process.env.FRONTEND_URL}/signup/success?session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: `${process.env.FRONTEND_URL}/signup/cancel`,
+      });
+      checkoutUrl = checkoutSession.url || null;
 
-    logger.info(`Stripe checkout session created for restaurant ${restaurant._id}`, {
-      sessionId: checkoutSession.id,
-      plan: validatedData.plan,
-    });
+      logger.info(`Stripe checkout session created for restaurant ${restaurant._id}`, {
+        sessionId: checkoutSession.id,
+        plan: validatedData.plan,
+      });
 
-    // Return checkout URL
+      // Send payment completion email asynchronously
+      sendPaymentCompletionEmail(
+        { name: restaurant.name, email: validatedData.ownerEmail },
+        checkoutUrl!
+      ).catch((err) => logger.error('Failed to send payment completion email:', err));
+    } catch (stripeError) {
+      logger.error('Stripe checkout creation failed during signup (account kept):', stripeError);
+    }
+
     res.status(201).json({
       message: 'Account created successfully. Please complete payment to activate.',
       restaurant: {
@@ -682,10 +744,10 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
         id: owner._id,
         email: owner.email,
       },
-      checkout: {
-        sessionId: checkoutSession.id,
-        url: checkoutSession.url,
-      },
+      checkout: checkoutUrl ? { url: checkoutUrl } : undefined,
+      note: !checkoutUrl
+        ? 'Payment link could not be generated. You can retry by logging in with your credentials.'
+        : undefined,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -722,9 +784,11 @@ export const resumePayment = async (req: Request, res: Response): Promise<void> 
       accountType: 'self-service',
     });
 
+    // Always return the same response to prevent email enumeration
     if (!restaurant) {
-      res.status(404).json({
-        error: { message: 'No inactive restaurant found with this email' },
+      logger.info(`Resume payment requested for non-matching restaurant: ${validatedData.restaurantEmail}`);
+      res.status(200).json({
+        message: 'If a matching account is found, a payment link has been sent to the associated email address.',
       });
       return;
     }
@@ -736,19 +800,17 @@ export const resumePayment = async (req: Request, res: Response): Promise<void> 
     });
 
     if (!owner) {
-      res.status(404).json({
-        error: { message: 'No owner found with this email for the restaurant' },
+      logger.info(`Resume payment requested but no owner found for restaurant ${restaurant._id}`);
+      res.status(200).json({
+        message: 'If a matching account is found, a payment link has been sent to the associated email address.',
       });
       return;
     }
 
-    // Check if restaurant already has a Stripe customer ID from previous attempt
-    const hasStripeCustomer = !!restaurant.subscription?.stripeCustomerId;
-
     // Create new checkout session
     const checkoutSession = await createCheckoutSession({
       restaurantId: restaurant._id.toString(),
-      plan: restaurant.subscription?.plan || 'starter', // fallback to starter
+      plan: restaurant.subscription?.plan || 'starter',
       email: validatedData.ownerEmail,
       acceptedTerms: owner.acceptedTerms,
       successUrl: `${process.env.FRONTEND_URL}/signup/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -758,24 +820,20 @@ export const resumePayment = async (req: Request, res: Response): Promise<void> 
     logger.info(`Resume payment checkout session created for restaurant ${restaurant._id}`, {
       sessionId: checkoutSession.id,
       plan: restaurant.subscription?.plan,
-      hasStripeCustomer,
     });
 
-    // Return checkout URL
+    // Send payment reminder email with the new checkout link
+    sendPaymentCompletionEmail(
+      { name: restaurant.name, email: validatedData.ownerEmail },
+      checkoutSession.url!
+    ).catch((err) => logger.error('Failed to send payment completion email on resume:', err));
+
     res.status(200).json({
-      message: 'Payment session created successfully',
-      restaurant: {
-        id: restaurant._id,
-        name: restaurant.name,
-        email: restaurant.email,
-      },
+      message: 'If a matching account is found, a payment link has been sent to the associated email address.',
       checkout: {
         sessionId: checkoutSession.id,
         url: checkoutSession.url,
       },
-      note: hasStripeCustomer
-        ? 'A previous payment attempt was detected. This new session will update your existing subscription.'
-        : 'This is your first payment attempt.',
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

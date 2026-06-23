@@ -891,6 +891,33 @@ export function resetApiInstance(): void {
 }
 
 /**
+ * PAYMENT COMPLETION EMAIL
+ *
+ * Sent immediately after signup when user hasn't completed Stripe checkout.
+ * Contains a direct link to resume payment.
+ *
+ * Template: payment-reminder
+ * Variables: restaurantName, resumeUrl, daysRemaining
+ */
+export async function sendPaymentCompletionEmail(
+  restaurant: { name: string; email: string },
+  checkoutUrl: string,
+  daysRemaining: number = 14
+): Promise<EmailResult> {
+  return sendEmail({
+    to: restaurant.email,
+    toName: restaurant.name,
+    subject: `Finalisez votre inscription sur TableMaster`,
+    templateName: 'payment-reminder',
+    params: {
+      restaurantName: restaurant.name,
+      resumeUrl: checkoutUrl,
+      daysRemaining: daysRemaining.toString(),
+    },
+  });
+}
+
+/**
  * REMINDER EMAIL
  *
  * Sent 24h before a confirmed reservation to remind the customer.
