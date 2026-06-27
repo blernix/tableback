@@ -499,10 +499,7 @@ export const verifyEmail = async (req: Request, res: Response): Promise<void> =>
     const { token } = req.params;
 
     const user = await User.findOne({
-      $or: [
-        { emailVerificationToken: token, emailVerified: false },
-        { emailVerificationToken: token, emailVerified: true },
-      ],
+      emailVerificationToken: token,
     });
 
     if (!user) {
@@ -519,9 +516,15 @@ export const verifyEmail = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
+    if (user.emailVerificationExpires && user.emailVerificationExpires < new Date()) {
+      res.status(400).json({
+        error: { message: 'Lien de vérification expiré.' },
+      });
+      return;
+    }
+
     user.emailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationExpires = undefined;
+    user.emailVerificationExpires = new Date(0);
     await user.save();
 
     logger.info(`Email verified for user: ${user.email}`);
