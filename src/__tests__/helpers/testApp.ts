@@ -20,13 +20,13 @@ export function createTestApp(): Express {
   app.use(express.urlencoded({ extended: true }));
 
   // Routes
-  app.use('/api/auth', authRoutes);
-  app.use('/api/admin', adminRoutes);
-  app.use('/api/restaurant', restaurantRoutes);
-  app.use('/api/menu', menuRoutes);
-  app.use('/api/reservations', reservationRoutes);
-  app.use('/api/day-blocks', dayBlockRoutes);
-  app.use('/api/public', publicRoutes);
+  app.use('/api/v1/auth', authRoutes);
+  app.use('/api/v1/admin', adminRoutes);
+  app.use('/api/v1/restaurant', restaurantRoutes);
+  app.use('/api/v1/menu', menuRoutes);
+  app.use('/api/v1/reservations', reservationRoutes);
+  app.use('/api/v1/day-blocks', dayBlockRoutes);
+  app.use('/api/v1/public', publicRoutes);
 
   // Health check
   app.get('/health', (_req, res) => {

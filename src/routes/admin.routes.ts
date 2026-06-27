@@ -1,60 +1,147 @@
 import { Router } from 'express';
 import * as adminController from '../controllers/admin.controller';
 import { authenticateToken, authorizeRole } from '../middleware/auth.middleware';
+import { validate } from '../middleware/validate.middleware';
+import {
+  createRestaurantSchema,
+  updateRestaurantSchema,
+  createRestaurantUserSchema,
+  updateUserSchema,
+  createCommercialUserSchema,
+  manageSubscriptionSchema,
+  getRestaurantsQuery,
+  getRestaurantUsersQuery,
+  getRestaurantAnalyticsQuery,
+  exportQuery,
+  restaurantIdParam,
+  restaurantUserIdParam,
+  userIdParam,
+  commercialIdParam,
+  notificationAnalyticsRestaurantIdParam,
+} from '../validations/admin.schemas';
 
 const router = Router();
 
-// All admin routes require authentication and admin role
 router.use(authenticateToken);
 router.use(authorizeRole(['admin']));
 
-// Restaurant management
-router.get('/restaurants', adminController.getRestaurants);
-router.post('/restaurants', adminController.createRestaurant);
-router.get('/restaurants/:id', adminController.getRestaurantById);
-router.put('/restaurants/:id', adminController.updateRestaurant);
-router.delete('/restaurants/:id', adminController.deleteRestaurant);
-router.put('/restaurants/:id/regenerate-api-key', adminController.regenerateApiKey);
+router.get(
+  '/restaurants',
+  validate({ query: getRestaurantsQuery }),
+  adminController.getRestaurants
+);
+router.post(
+  '/restaurants',
+  validate({ body: createRestaurantSchema }),
+  adminController.createRestaurant
+);
+router.get(
+  '/restaurants/:id',
+  validate({ params: restaurantIdParam }),
+  adminController.getRestaurantById
+);
+router.put(
+  '/restaurants/:id',
+  validate({ body: updateRestaurantSchema, params: restaurantIdParam }),
+  adminController.updateRestaurant
+);
+router.delete(
+  '/restaurants/:id',
+  validate({ params: restaurantIdParam }),
+  adminController.deleteRestaurant
+);
+router.put(
+  '/restaurants/:id/regenerate-api-key',
+  validate({ params: restaurantIdParam }),
+  adminController.regenerateApiKey
+);
 
-// Restaurant user management
-router.get('/restaurants/:restaurantId/users', adminController.getRestaurantUsers);
-router.post('/restaurants/:restaurantId/users', adminController.createRestaurantUser);
-router.put('/users/:userId', adminController.updateUser);
-router.delete('/users/:userId', adminController.deleteUser);
+router.get(
+  '/restaurants/:restaurantId/users',
+  validate({ query: getRestaurantUsersQuery, params: restaurantUserIdParam }),
+  adminController.getRestaurantUsers
+);
+router.post(
+  '/restaurants/:restaurantId/users',
+  validate({ body: createRestaurantUserSchema, params: restaurantUserIdParam }),
+  adminController.createRestaurantUser
+);
+router.put(
+  '/users/:userId',
+  validate({ body: updateUserSchema, params: userIdParam }),
+  adminController.updateUser
+);
+router.delete(
+  '/users/:userId',
+  validate({ params: userIdParam }),
+  adminController.deleteUser
+);
 
-// Admin dashboard
 router.get('/dashboard', adminController.getAdminDashboard);
-
-// Restaurant monitoring
 router.get('/monitoring', adminController.getRestaurantMonitoring);
 
-// Restaurant analytics
-router.get('/restaurants/:id/analytics', adminController.getRestaurantAnalytics);
+router.get(
+  '/restaurants/:id/analytics',
+  validate({ query: getRestaurantAnalyticsQuery, params: restaurantIdParam }),
+  adminController.getRestaurantAnalytics
+);
 
-// Data export
-router.get('/export/restaurants', adminController.exportRestaurants);
-router.get('/export/users', adminController.exportUsers);
-router.get('/export/reservations', adminController.exportReservations);
-router.get('/export/notifications', adminController.exportNotificationAnalytics);
+router.get(
+  '/export/restaurants',
+  validate({ query: exportQuery }),
+  adminController.exportRestaurants
+);
+router.get(
+  '/export/users',
+  validate({ query: exportQuery }),
+  adminController.exportUsers
+);
+router.get(
+  '/export/reservations',
+  validate({ query: exportQuery }),
+  adminController.exportReservations
+);
+router.get(
+  '/export/notifications',
+  validate({ query: exportQuery }),
+  adminController.exportNotificationAnalytics
+);
 
-// Notification analytics
 router.get('/analytics/notifications', adminController.getNotificationAnalytics);
 router.get(
   '/analytics/notifications/restaurant/:restaurantId',
+  validate({ params: notificationAnalyticsRestaurantIdParam }),
   adminController.getRestaurantNotificationAnalyticsController
 );
 
-// Quota management
 router.post('/quotas/reset-monthly', adminController.resetMonthlyQuotas);
 
-// Subscription management
-router.post('/restaurants/:id/subscription/manage', adminController.manageSubscription);
-router.get('/restaurants/:id/subscription/sync-status', adminController.getSubscriptionSyncStatus);
+router.post(
+  '/restaurants/:id/subscription/manage',
+  validate({ body: manageSubscriptionSchema, params: restaurantIdParam }),
+  adminController.manageSubscription
+);
+router.get(
+  '/restaurants/:id/subscription/sync-status',
+  validate({ params: restaurantIdParam }),
+  adminController.getSubscriptionSyncStatus
+);
 
-// Commercial user management
 router.get('/commercials', adminController.getCommercialUsers);
-router.get('/commercials/:id', adminController.getCommercialDetail);
-router.delete('/commercials/:id', adminController.deleteCommercialUser);
-router.post('/commercials', adminController.createCommercialUser);
+router.get(
+  '/commercials/:id',
+  validate({ params: commercialIdParam }),
+  adminController.getCommercialDetail
+);
+router.delete(
+  '/commercials/:id',
+  validate({ params: commercialIdParam }),
+  adminController.deleteCommercialUser
+);
+router.post(
+  '/commercials',
+  validate({ body: createCommercialUserSchema }),
+  adminController.createCommercialUser
+);
 
 export default router;

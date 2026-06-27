@@ -29,6 +29,9 @@ export interface IUser extends Document {
   trackingId?: string;
   passwordResetToken?: string;
   passwordResetExpires?: Date;
+  emailVerified: boolean;
+  emailVerificationToken?: string;
+  emailVerificationExpires?: Date;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -113,6 +116,9 @@ const userSchema = new Schema<IUser>(
     trackingId: { type: String, unique: true, sparse: true },
     passwordResetToken: { type: String, default: null },
     passwordResetExpires: { type: Date, default: null },
+    emailVerified: { type: Boolean, default: false },
+    emailVerificationToken: { type: String, default: null },
+    emailVerificationExpires: { type: Date, default: null },
   },
   {
     timestamps: true,

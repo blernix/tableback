@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import { z } from 'zod';
@@ -61,7 +62,7 @@ export const createRestaurant = async (req: Request, res: Response): Promise<voi
 
     const savedRestaurant = await restaurant.save();
 
-    const plainPassword = Math.random().toString(36).slice(-12) + 'Aa1!';
+    const plainPassword = crypto.randomBytes(8).toString('hex') + 'Aa1!';
     const user = new User({
       email: validatedData.email,
       password: plainPassword,
@@ -85,14 +86,13 @@ export const createRestaurant = async (req: Request, res: Response): Promise<voi
           percent_off: discountPercent,
           duration: 'once',
           max_redemptions: 1,
-          redeem_by: Math.floor(Date.now() / 1000) + 24 * 3600, // expires in 24h
+          redeem_by: Math.floor(Date.now() / 1000) + 24 * 3600,
           metadata: { restaurantId: savedRestaurant._id.toString(), createdBy: 'commercial' },
         });
         couponId = coupon.id;
         logger.info(`Coupon created for restaurant ${savedRestaurant._id}: ${discountPercent}% off`);
       } catch (err) {
         logger.error('Failed to create Stripe coupon:', err);
-        // Continue without coupon
       }
     }
 
@@ -114,7 +114,6 @@ export const createRestaurant = async (req: Request, res: Response): Promise<voi
 
     logger.info(`Commercial ${req.user!.email} created restaurant "${restaurant.name}" — checkout: ${checkoutSession.id}${couponId ? `, coupon: ${discountPercent}%` : ''}`);
 
-    // Send invitation email with payment link + credentials
     sendCommercialInvitationEmail(
       { name: validatedData.name, email: validatedData.email },
       {

@@ -1,11 +1,12 @@
+import crypto from 'crypto';
+
 /**
  * Generate a temporary token for 2FA verification
  * This token is short-lived (5 minutes) and used during the 2FA verification flow
  */
 export function generateTempToken(userId: string): string {
-  // Simple temporary token - in production, use a proper JWT with short expiration
   const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(7);
+  const random = crypto.randomBytes(16).toString('hex');
   return Buffer.from(`${userId}:${timestamp}:${random}`).toString('base64');
 }
 

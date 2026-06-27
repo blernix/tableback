@@ -367,7 +367,7 @@ export async function sendConfirmationEmail(
     reservation._id,
     reservation.restaurantId
   );
-  const cancellationLink = `${process.env.BACKEND_URL}/api/public/reservations/cancel?token=${cancellationToken}`;
+  const cancellationLink = `${process.env.BACKEND_URL}/api/v1/public/reservations/cancel?token=${cancellationToken}`;
 
   return sendEmail({
     to: reservation.customerEmail,
@@ -412,7 +412,7 @@ export async function sendDirectConfirmationEmail(
     reservation._id,
     reservation.restaurantId
   );
-  const cancellationLink = `${process.env.BACKEND_URL}/api/public/reservations/cancel?token=${cancellationToken}`;
+  const cancellationLink = `${process.env.BACKEND_URL}/api/v1/public/reservations/cancel?token=${cancellationToken}`;
 
   return sendEmail({
     to: reservation.customerEmail,
@@ -961,7 +961,7 @@ export async function sendCommercialInvitationEmail(
     trialDays?: number;
     discountPercent?: number;
   }
-): Promise<EmailResult> {
+ ): Promise<EmailResult> {
   const planLabel = params.plan === 'pro' ? 'Pro (69€/mois)' : 'Starter (39€/mois)';
   const trialText = params.trialDays && params.trialDays > 0
     ? `${params.trialDays} jours d'essai gratuit`
@@ -986,6 +986,25 @@ export async function sendCommercialInvitationEmail(
       planLabel,
       trialText,
       discountInfo,
+    },
+  });
+}
+
+/**
+ * Send email verification link
+ */
+export async function sendEmailVerificationEmail(
+  to: { email: string; name?: string },
+  verificationUrl: string
+): Promise<EmailResult> {
+  return sendEmail({
+    to: to.email,
+    toName: to.name || to.email,
+    subject: 'Vérifiez votre adresse email - TableMaster',
+    templateName: 'email-verification',
+    params: {
+      userName: to.name || to.email,
+      verificationUrl,
     },
   });
 }

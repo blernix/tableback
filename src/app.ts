@@ -1,8 +1,8 @@
+import crypto from 'crypto';
 import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
 import multer from 'multer';
 import logger from './utils/logger';
@@ -40,6 +40,12 @@ app.set('trust proxy', 1);
 // This must come BEFORE express.json() middleware
 // Handle webhook directly here to preserve raw body
 app.post(
+  '/api/v1/billing/webhook',
+  express.raw({ type: 'application/json' }),
+  handleWebhook
+);
+
+app.post(
   '/api/billing/webhook',
   express.raw({ type: 'application/json' }),
   handleWebhook
@@ -62,24 +68,21 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Cookie parser middleware
 app.use(cookieParser());
 
-// Rate limiting - increased for intensive dashboard usage
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Limit each IP to 1000 requests per windowMs (increased from 100 for legitimate usage)
+import { createLimiter } from './middleware/rateLimiterFactory';
+
+const limiter = createLimiter('global', {
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
   message: {
     error: {
-      message: 'Too many requests from this IP, please try again after 15 minutes'
-    }
+      message: 'Too many requests from this IP, please try again after 15 minutes',
+    },
   },
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Add handler to log rate limit blocks
-  handler: (req, res) => {
-    logger.warn(`⚠️ Rate limit exceeded for ${req.ip}: ${req.method} ${req.path}`);
+  handler: (_req, res) => {
     res.status(429).json({
       error: {
-        message: 'Too many requests from this IP, please try again after 15 minutes'
-      }
+        message: 'Too many requests from this IP, please try again after 15 minutes',
+      },
     });
   },
 });
@@ -107,7 +110,7 @@ app.use(
 // Request timeout middleware (except for SSE)
 app.use((req: Request, res: Response, next: NextFunction) => {
   // Skip timeout for SSE connections
-  if (req.path === '/api/notifications/stream') {
+  if (req.path === '/api/v1/notifications/stream') {
     return next();
   }
 
@@ -141,7 +144,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Request logging middleware with response completion tracking
 app.use((req: Request, res: Response, next: NextFunction) => {
   const startTime = Date.now();
-  const requestId = Math.random().toString(36).substring(7);
+  const requestId = crypto.randomUUID();
 
   logger.info(`[${requestId}] → ${req.method} ${req.originalUrl || req.url}`, {
     ip: req.ip,
@@ -173,8 +176,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 // Input sanitization middleware
 app.use(sanitizeRequest);
 
-// Apply rate limiting to all API routes (after logging to see blocked requests)
-app.use('/api/', limiter);
+app.use('/api/v1/', limiter);
 
 // Serve widget.js dynamically with correct frontend URL
 // This must come BEFORE express.static to override the static file
@@ -221,22 +223,21 @@ app.use(express.static('public', {
 
 // Routes
 app.use('/', healthRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/admin', adminRoutes);
-app.use('/api/restaurant', restaurantRoutes);
-app.use('/api/menu', menuRoutes);
-app.use('/api/reservations', reservationRoutes);
-app.use('/api/day-blocks', dayBlockRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/2fa', twoFactorRoutes);
-app.use('/api/billing', billingRoutes);
-app.use('/api/commercial', commercialRoutes);
-app.use('/api/profile', profileRoutes);
-app.use('/api/public', publicRoutes);
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/restaurant', restaurantRoutes);
+app.use('/api/v1/menu', menuRoutes);
+app.use('/api/v1/reservations', reservationRoutes);
+app.use('/api/v1/day-blocks', dayBlockRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/2fa', twoFactorRoutes);
+app.use('/api/v1/billing', billingRoutes);
+app.use('/api/v1/commercial', commercialRoutes);
+app.use('/api/v1/profile', profileRoutes);
+app.use('/api/v1/public', publicRoutes);
 
-// Debug route for testing Sentry (intentional error)
-app.get('/api/debug-sentry', (_req: Request, _res: Response) => {
+app.get('/api/v1/debug-sentry', (_req: Request, _res: Response) => {
   throw new Error('My first Sentry error from TableMaster backend!');
 });
 

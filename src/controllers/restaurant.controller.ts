@@ -742,7 +742,7 @@ export const generateMenuQrCode = async (req: Request, res: Response): Promise<v
 
     // Generate the stable QR code URL
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:4000';
-    const qrCodeUrl = `${backendUrl}/api/public/menu/pdf/${restaurant._id}`;
+    const qrCodeUrl = `${backendUrl}/api/v1/public/menu/pdf/${restaurant._id}`;
 
     logger.info(`QR code generated for restaurant: ${restaurant.name} (ID: ${restaurant._id})`);
 

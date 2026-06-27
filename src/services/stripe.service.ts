@@ -11,6 +11,50 @@ import {
   sendTrialReminderEmail,
 } from './emailService';
 
+export async function createTrialSubscription(params: {
+  restaurantId: string;
+  plan: 'starter' | 'pro';
+  email: string;
+  trialDays?: number;
+  referralCode?: string;
+}): Promise<{ customerId: string; subscriptionId: string } | null> {
+  try {
+    const { restaurantId, plan, email, trialDays = 14, referralCode } = params;
+    const priceId = STRIPE_CONFIG.products[plan].priceId;
+    if (!priceId) throw new Error(`Price ID not configured for plan: ${plan}`);
+
+    const customer = await stripe.customers.create({
+      email,
+      metadata: { restaurantId },
+    });
+
+    const subscription = await stripe.subscriptions.create({
+      customer: customer.id,
+      items: [{ price: priceId }],
+      trial_period_days: trialDays,
+      payment_behavior: 'default_incomplete',
+      metadata: {
+        restaurantId,
+        plan,
+        trialDays: String(trialDays),
+        ...(referralCode ? { referralCode } : {}),
+      },
+    });
+
+    logger.info(`Trial subscription created for restaurant ${restaurantId}`, {
+      customerId: customer.id,
+      subscriptionId: subscription.id,
+      plan,
+      trialDays,
+    });
+
+    return { customerId: customer.id, subscriptionId: subscription.id };
+  } catch (error) {
+    logger.error('Failed to create trial subscription:', error);
+    return null;
+  }
+}
+
 /**
  * Create a Stripe Checkout Session for a new subscription
  */
@@ -339,23 +383,23 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription): Pro
         at100: false,
       },
     };
-  } else if (plan === 'pro') {
-    // Pro plan has unlimited reservations
-    restaurant.reservationQuota = {
-      monthlyCount: 0,
-      lastResetDate: new Date(),
-      limit: -1, // Unlimited
-      emailsSent: {
-        at80: false,
-        at90: false,
-        at100: false,
-      },
-    };
-  }
+    } else if (plan === 'pro') {
+      restaurant.reservationQuota = {
+        monthlyCount: 0,
+        lastResetDate: new Date(),
+        limit: -1,
+        emailsSent: {
+          at80: false,
+          at90: false,
+          at100: false,
+        },
+      };
+    }
+
+  const wasAlreadyActive = restaurant.status === 'active' && restaurant.subscription?.stripeSubscriptionId;
 
   await restaurant.save();
 
-  // Log to history
   await SubscriptionHistory.create({
     restaurantId: new Types.ObjectId(restaurantId),
     eventType: 'subscription_created',
@@ -371,6 +415,16 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription): Pro
     subscriptionId: subscription.id,
     plan,
   });
+
+  if (!wasAlreadyActive) {
+    const user = await User.findOne({ restaurantId: restaurant._id });
+    const trialDays = parseInt(subscription.metadata?.trialDays || '14', 10);
+    const username = user?.email || '';
+    sendWelcomeEmail(
+      { email: username },
+      { name: restaurant.name, trialDays }
+    ).catch((err) => logger.error('Failed to send welcome email (subscription webhook):', err));
+  }
 }
 
 /**
@@ -417,8 +471,28 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
 
   // Update quota limit when plan changes
   if (previousPlan !== newPlan) {
-    if (newPlan === 'starter') {
-      // Downgrade to Starter: set limit to 400
+    if (newPlan === 'starter' && previousPlan === 'pro') {
+      if (!restaurant.reservationQuota) {
+        restaurant.reservationQuota = {
+          monthlyCount: 0,
+          lastResetDate: new Date(),
+          limit: 400,
+          emailsSent: { at80: false, at90: false, at100: false },
+        };
+      } else {
+        restaurant.reservationQuota.limit = 400;
+      }
+
+      restaurant.widgetConfig = undefined;
+      restaurant.googleReviewLink = undefined;
+
+      await User.deleteMany({
+        restaurantId: restaurant._id,
+        role: 'server',
+      });
+
+      logger.info(`Cleaned up Pro features for restaurant ${restaurantId} after plan downgrade`);
+    } else if (newPlan === 'starter') {
       if (!restaurant.reservationQuota) {
         restaurant.reservationQuota = {
           monthlyCount: 0,

@@ -1,24 +1,31 @@
 import { Router } from 'express';
 import * as authController from '../controllers/auth.controller';
 import { authenticateToken, authorizeRole } from '../middleware/auth.middleware';
-import rateLimit from 'express-rate-limit';
+import { validate } from '../middleware/validate.middleware';
+import {
+  registerSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  changePasswordSchema,
+  changeEmailSchema,
+  signupSchema,
+} from '../validations/auth.schemas';
+import { createLimiter } from '../middleware/rateLimiterFactory';
 import { forgotPasswordEmailRateLimit } from '../middleware/rateLimitPerEmail.middleware';
 import logger from '../utils/logger';
 
 const router = Router();
 
-// Rate limiter for login - STRICT protection against brute force
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per 15 minutes
-  skipSuccessfulRequests: true, // ✅ Don't count successful logins (only failed attempts)
+const loginLimiter = createLimiter('auth_login', {
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
   message: {
     error: {
       message: 'Too many login attempts. Please try again later.',
     },
   },
-  standardHeaders: true,
-  legacyHeaders: false,
   handler: (req, res) => {
     logger.warn(`🚨 Login rate limit exceeded for IP ${req.ip}`, {
       ip: req.ip,
@@ -32,17 +39,14 @@ const loginLimiter = rateLimit({
   },
 });
 
-// Rate limiter for forgot password - Prevent abuse
-const forgotPasswordLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5, // 5 requests per hour
+const forgotPasswordLimiter = createLimiter('auth_forgot', {
+  windowMs: 60 * 60 * 1000,
+  max: 5,
   message: {
     error: {
       message: 'Too many password reset attempts. Please try again later.',
     },
   },
-  standardHeaders: true,
-  legacyHeaders: false,
   handler: (req, res) => {
     logger.warn(`🚨 Forgot password rate limit exceeded for IP ${req.ip}`, {
       ip: req.ip,
@@ -56,17 +60,14 @@ const forgotPasswordLimiter = rateLimit({
   },
 });
 
-// Rate limiter for reset password - Prevent brute force on reset tokens
-const resetPasswordLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10, // 10 attempts per hour (higher than forgot-password since valid tokens are needed)
+const resetPasswordLimiter = createLimiter('auth_reset', {
+  windowMs: 60 * 60 * 1000,
+  max: 10,
   message: {
     error: {
       message: 'Too many password reset attempts. Please try again later.',
     },
   },
-  standardHeaders: true,
-  legacyHeaders: false,
   handler: (req, res) => {
     logger.warn(`🚨 Reset password rate limit exceeded for IP ${req.ip}`, {
       ip: req.ip,
@@ -79,17 +80,14 @@ const resetPasswordLimiter = rateLimit({
   },
 });
 
-// Rate limiter for user registration - Prevent account spam
-const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5, // 5 requests per hour
+const registerLimiter = createLimiter('auth_register', {
+  windowMs: 60 * 60 * 1000,
+  max: 5,
   message: {
     error: {
       message: 'Too many registration attempts. Please try again later.',
     },
   },
-  standardHeaders: true,
-  legacyHeaders: false,
   handler: (req, res) => {
     logger.warn(`🚨 Registration rate limit exceeded for IP ${req.ip}`, {
       ip: req.ip,
@@ -103,17 +101,14 @@ const registerLimiter = rateLimit({
   },
 });
 
-// Rate limiter for self-service signup - Prevent abuse
-const signupLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // 3 signups per hour per IP (stricter than register)
+const signupLimiter = createLimiter('auth_signup', {
+  windowMs: 60 * 60 * 1000,
+  max: 3,
   message: {
     error: {
       message: 'Too many signup attempts. Please try again later.',
     },
   },
-  standardHeaders: true,
-  legacyHeaders: false,
   handler: (req, res) => {
     logger.warn(`🚨 Signup rate limit exceeded for IP ${req.ip}`, {
       ip: req.ip,
@@ -128,45 +123,74 @@ const signupLimiter = rateLimit({
   },
 });
 
-// POST /api/auth/register - Register new user (admin only, rate limited)
 router.post(
   '/register',
   registerLimiter,
   authenticateToken,
   authorizeRole(['admin']),
+  validate({ body: registerSchema }),
   authController.register
 );
 
-// POST /api/auth/signup - Self-service signup (public, rate limited)
-router.post('/signup', signupLimiter, authController.signup);
+router.post(
+  '/signup',
+  signupLimiter,
+  validate({ body: signupSchema }),
+  authController.signup
+);
 
-// POST /api/auth/resume-payment - Resume payment for inactive restaurant (public, rate limited)
-router.post('/resume-payment', signupLimiter, authController.resumePayment);
+router.post(
+  '/login',
+  loginLimiter,
+  validate({ body: loginSchema }),
+  authController.login
+);
 
-// POST /api/auth/login - Login user (rate limited)
-router.post('/login', loginLimiter, authController.login);
+router.get('/verify-email/:token', authController.verifyEmail);
 
-// POST /api/auth/refresh - Refresh JWT token
+const resendVerificationLimiter = createLimiter('auth_resend_verify', {
+  windowMs: 15 * 60 * 1000,
+  max: 3,
+  message: { error: { message: 'Trop de demandes. Réessayez dans 15 minutes.' } },
+});
+
+router.post(
+  '/resend-verification',
+  resendVerificationLimiter,
+  authController.resendVerification
+);
+
 router.post('/refresh', authController.refreshToken);
 
-// POST /api/auth/logout - Logout user (requires authentication)
 router.post('/logout', authenticateToken, authController.logout);
 
-// POST /api/auth/forgot-password - Request password reset email
 router.post(
   '/forgot-password',
   forgotPasswordLimiter,
   forgotPasswordEmailRateLimit,
+  validate({ body: forgotPasswordSchema }),
   authController.forgotPassword
 );
 
-// POST /api/auth/reset-password - Reset password with token (rate limited to prevent token brute force)
-router.post('/reset-password', resetPasswordLimiter, authController.resetPassword);
+router.post(
+  '/reset-password',
+  resetPasswordLimiter,
+  validate({ body: resetPasswordSchema }),
+  authController.resetPassword
+);
 
-// POST /api/auth/change-password - Change password (requires authentication)
-router.post('/change-password', authenticateToken, authController.changePassword);
+router.post(
+  '/change-password',
+  authenticateToken,
+  validate({ body: changePasswordSchema }),
+  authController.changePassword
+);
 
-// POST /api/auth/change-email - Change email (requires authentication)
-router.post('/change-email', authenticateToken, authController.changeEmail);
+router.post(
+  '/change-email',
+  authenticateToken,
+  validate({ body: changeEmailSchema }),
+  authController.changeEmail
+);
 
 export default router;

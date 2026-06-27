@@ -1,18 +1,39 @@
 import { Router } from 'express';
 import * as dayBlockController from '../controllers/dayblock.controller';
 import { authenticateToken, authorizeRole } from '../middleware/auth.middleware';
+import { validate } from '../middleware/validate.middleware';
+import {
+  createDayBlockSchema,
+  bulkCreateDayBlocksSchema,
+  checkDayBlockParam,
+  dayBlockIdParam,
+} from '../validations/dayblock.schemas';
 
 const router = Router();
 
-// All day block routes require authentication and restaurant role
 router.use(authenticateToken);
 router.use(authorizeRole(['restaurant']));
 
-// Day blocks
 router.get('/', dayBlockController.getDayBlocks);
-router.get('/check/:date', dayBlockController.checkDayBlock);
-router.post('/', dayBlockController.createDayBlock);
-router.post('/bulk', dayBlockController.bulkCreateDayBlocks);
-router.delete('/:id', dayBlockController.deleteDayBlock);
+router.get(
+  '/check/:date',
+  validate({ params: checkDayBlockParam }),
+  dayBlockController.checkDayBlock
+);
+router.post(
+  '/',
+  validate({ body: createDayBlockSchema }),
+  dayBlockController.createDayBlock
+);
+router.post(
+  '/bulk',
+  validate({ body: bulkCreateDayBlocksSchema }),
+  dayBlockController.bulkCreateDayBlocks
+);
+router.delete(
+  '/:id',
+  validate({ params: dayBlockIdParam }),
+  dayBlockController.deleteDayBlock
+);
 
 export default router;

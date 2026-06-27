@@ -3,29 +3,45 @@ import * as restaurantController from '../controllers/restaurant.controller';
 import * as slugManagementController from '../controllers/slug-management.controller';
 import * as customerController from '../controllers/customer.controller';
 import { authenticateToken, authorizeRole } from '../middleware/auth.middleware';
+import { validate } from '../middleware/validate.middleware';
+import {
+  updateBasicInfoSchema,
+  updateOpeningHoursSchema,
+  switchMenuModeSchema,
+  updateTablesConfigSchema,
+  updateReservationConfigSchema,
+  createClosureSchema,
+  updateWidgetConfigSchema,
+  sendContactMessageSchema,
+  closureIdParam,
+} from '../validations/restaurant.schemas';
+import {
+  createCustomerSchema,
+  updateCustomerSchema,
+  getCustomersQuery,
+  searchCustomersQuery,
+  exportCustomersQuery,
+  customerIdParam,
+} from '../validations/customer.schemas';
+import { updateRestaurantSlugSchema } from '../validations/slug.schemas';
 import { verifyProPlan } from '../middleware/subscription.middleware';
+import { createLimiter } from '../middleware/rateLimiterFactory';
 import { upload } from '../config/storage.config';
-import rateLimit from 'express-rate-limit';
 
 const router = Router();
 
-// Rate limiter for file uploads (10 uploads per hour per IP)
-const uploadLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10, // 10 uploads per hour
+const uploadLimiter = createLimiter('upload', {
+  windowMs: 60 * 60 * 1000,
+  max: 10,
   message: {
     error: {
       message: 'Too many upload attempts. Please try again later.',
     },
   },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
-// All restaurant routes require authentication
 router.use(authenticateToken);
 
-// Restaurant data - accessible to restaurant and server roles
 router.get('/me', authorizeRole(['restaurant', 'server']), restaurantController.getMyRestaurant);
 router.get(
   '/dashboard-stats',
@@ -33,11 +49,16 @@ router.get(
   restaurantController.getDashboardStats
 );
 
-// Restaurant configuration - only accessible to restaurant role
-router.put('/basic-info', authorizeRole(['restaurant']), restaurantController.updateBasicInfo);
+router.put(
+  '/basic-info',
+  authorizeRole(['restaurant']),
+  validate({ body: updateBasicInfoSchema }),
+  restaurantController.updateBasicInfo
+);
 router.put(
   '/opening-hours',
   authorizeRole(['restaurant']),
+  validate({ body: updateOpeningHoursSchema }),
   restaurantController.updateOpeningHours
 );
 router.post(
@@ -49,7 +70,6 @@ router.post(
 );
 router.delete('/logo', authorizeRole(['restaurant']), restaurantController.deleteLogo);
 
-// Menu - only accessible to restaurant role
 router.post(
   '/menu/pdf',
   authorizeRole(['restaurant']),
@@ -57,61 +77,104 @@ router.post(
   upload.single('pdf'),
   restaurantController.uploadMenuPdf
 );
-router.put('/menu/mode', authorizeRole(['restaurant']), restaurantController.switchMenuMode);
+router.put(
+  '/menu/mode',
+  authorizeRole(['restaurant']),
+  validate({ body: switchMenuModeSchema }),
+  restaurantController.switchMenuMode
+);
 router.post(
   '/menu/qrcode/generate',
   authorizeRole(['restaurant']),
   restaurantController.generateMenuQrCode
 );
 
-// Widget Configuration - only accessible to restaurant role (Pro plan self-service)
 router.put(
   '/widget-config',
   authorizeRole(['restaurant']),
   verifyProPlan,
+  validate({ body: updateWidgetConfigSchema }),
   restaurantController.updateWidgetConfig
 );
 
-// Slug Configuration - only accessible to restaurant role (Pro plan only)
 router.put(
   '/slug',
   authorizeRole(['restaurant']),
   verifyProPlan,
+  validate({ body: updateRestaurantSlugSchema }),
   slugManagementController.updateRestaurantSlug
 );
 
-// Tables Configuration - only accessible to restaurant role
 router.put(
   '/tables-config',
   authorizeRole(['restaurant']),
+  validate({ body: updateTablesConfigSchema }),
   restaurantController.updateTablesConfig
 );
 
-// Reservation Configuration - only accessible to restaurant role
 router.put(
   '/reservation-config',
   authorizeRole(['restaurant']),
+  validate({ body: updateReservationConfigSchema }),
   restaurantController.updateReservationConfig
 );
 
-// Contact - accessible to restaurant and server roles
 router.post(
   '/contact',
   authorizeRole(['restaurant', 'server']),
+  validate({ body: sendContactMessageSchema }),
   restaurantController.sendContactMessage
 );
 
-// Closures - only accessible to restaurant role
 router.get('/closures', authorizeRole(['restaurant']), restaurantController.getClosures);
-router.post('/closures', authorizeRole(['restaurant']), restaurantController.createClosure);
-router.delete('/closures/:id', authorizeRole(['restaurant']), restaurantController.deleteClosure);
+router.post(
+  '/closures',
+  authorizeRole(['restaurant']),
+  validate({ body: createClosureSchema }),
+  restaurantController.createClosure
+);
+router.delete(
+  '/closures/:id',
+  authorizeRole(['restaurant']),
+  validate({ params: closureIdParam }),
+  restaurantController.deleteClosure
+);
 
-// Customers - accessible to restaurant and server roles
-router.get('/customers', authorizeRole(['restaurant', 'server']), customerController.getCustomers);
-router.get('/customers/search', authorizeRole(['restaurant', 'server']), customerController.searchCustomers);
-router.get('/customers/export', authorizeRole(['restaurant']), customerController.exportCustomers);
-router.get('/customers/:id', authorizeRole(['restaurant', 'server']), customerController.getCustomerById);
-router.post('/customers', authorizeRole(['restaurant', 'server']), customerController.createCustomer);
-router.put('/customers/:id', authorizeRole(['restaurant', 'server']), customerController.updateCustomer);
+router.get(
+  '/customers',
+  authorizeRole(['restaurant', 'server']),
+  validate({ query: getCustomersQuery }),
+  customerController.getCustomers
+);
+router.get(
+  '/customers/search',
+  authorizeRole(['restaurant', 'server']),
+  validate({ query: searchCustomersQuery }),
+  customerController.searchCustomers
+);
+router.get(
+  '/customers/export',
+  authorizeRole(['restaurant']),
+  validate({ query: exportCustomersQuery }),
+  customerController.exportCustomers
+);
+router.get(
+  '/customers/:id',
+  authorizeRole(['restaurant', 'server']),
+  validate({ params: customerIdParam }),
+  customerController.getCustomerById
+);
+router.post(
+  '/customers',
+  authorizeRole(['restaurant', 'server']),
+  validate({ body: createCustomerSchema }),
+  customerController.createCustomer
+);
+router.put(
+  '/customers/:id',
+  authorizeRole(['restaurant', 'server']),
+  validate({ body: updateCustomerSchema, params: customerIdParam }),
+  customerController.updateCustomer
+);
 
 export default router;

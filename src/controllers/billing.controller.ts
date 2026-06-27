@@ -87,10 +87,20 @@ export const createPortal = async (req: Request, res: Response): Promise<void> =
     }
 
     if (!restaurant.subscription?.stripeCustomerId) {
-      res.status(400).json({
-        error: { message: 'No subscription found' },
-      });
-      return;
+      try {
+        const customer = await stripe.customers.create({
+          email: req.user?.email || restaurant.email,
+          metadata: { restaurantId: restaurant._id.toString() },
+        });
+        restaurant.subscription = restaurant.subscription || { plan: 'starter', status: 'trial' };
+        restaurant.subscription.stripeCustomerId = customer.id;
+        await restaurant.save();
+        logger.info(`Created Stripe customer for restaurant ${restaurant._id}: ${customer.id}`);
+      } catch (err) {
+        logger.error('Failed to create Stripe customer for portal:', err);
+        res.status(500).json({ error: { message: 'Impossible de créer la session de gestion. Veuillez réessayer.' } });
+        return;
+      }
     }
 
     // Create portal session

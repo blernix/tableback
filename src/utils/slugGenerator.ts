@@ -1,18 +1,18 @@
+import crypto from 'crypto';
+
 /**
  * Génère un code court unique pour les URLs de type "vanity URL"
- * Version sans NanoID pour éviter les problèmes d'import ES Module
  * 
  * @param length - Longueur du code (défaut: 8)
  * @returns Code court unique
  */
 export function generateShortCode(length: number = 8): string {
-  // Alphabet personnalisé : alphanumérique + tiret
-  // Exclut les caractères ambigus (0, O, I, l, 1)
   const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz-';
-  
+  const bytes = crypto.randomBytes(length);
+
   let result = '';
   for (let i = 0; i < length; i++) {
-    result += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+    result += alphabet.charAt(bytes[i] % alphabet.length);
   }
   return result;
 }

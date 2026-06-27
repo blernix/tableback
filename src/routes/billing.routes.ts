@@ -7,34 +7,39 @@ import {
   getPlans,
 } from '../controllers/billing.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
+import { validate } from '../middleware/validate.middleware';
+import {
+  createCheckoutSchema,
+  cancelSubscriptionSchema,
+} from '../validations/billing.schemas';
 import { verifySubscription } from '../middleware/subscription.middleware';
 
 const router = Router();
 
-/**
- * Public routes
- */
-
-// Get available plans (public - for signup page)
 router.get('/plans', getPlans);
 
-// Note: Stripe webhook is handled directly in app.ts
-// to preserve raw body for signature verification
+router.post(
+  '/create-checkout',
+  authenticateToken,
+  validate({ body: createCheckoutSchema }),
+  createCheckout
+);
 
-/**
- * Protected routes (require authentication)
- */
+router.post(
+  '/create-portal',
+  authenticateToken,
+  verifySubscription,
+  createPortal
+);
 
-// Create checkout session (for new signups or upgrades)
-router.post('/create-checkout', authenticateToken, createCheckout);
-
-// Create customer portal session (manage subscription)
-router.post('/create-portal', authenticateToken, verifySubscription, createPortal);
-
-// Get current subscription details
 router.get('/subscription', authenticateToken, getSubscription);
 
-// Cancel subscription
-router.post('/cancel', authenticateToken, verifySubscription, cancelSub);
+router.post(
+  '/cancel',
+  authenticateToken,
+  verifySubscription,
+  validate({ body: cancelSubscriptionSchema }),
+  cancelSub
+);
 
 export default router;

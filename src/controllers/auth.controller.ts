@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { Types } from 'mongoose';
 import User from '../models/User.model';
@@ -6,10 +7,10 @@ import Restaurant from '../models/Restaurant.model';
 import { generateToken } from '../utils/jwt';
 import logger from '../utils/logger';
 import { z } from 'zod';
-import { sendPasswordResetEmail, sendPasswordChangedNotification, sendPaymentCompletionEmail } from '../services/emailService';
+import { sendPasswordResetEmail, sendPasswordChangedNotification, sendWelcomeEmail, sendEmailVerificationEmail } from '../services/emailService';
 import { validatePasswordResetToken, clearPasswordResetToken } from '../services/tokenService';
 import { generateTempToken } from '../utils/tempToken';
-import { createCheckoutSession } from '../services/stripe.service';
+import { createTrialSubscription } from '../services/stripe.service';
 import { generateShortCode } from '../utils/slugGenerator';
 
 // Validation schemas
@@ -133,57 +134,10 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
     // Check if user is active
     if (user.status !== 'active') {
-      const isSelfService = user.role === 'restaurant' && user.restaurantId;
-
-      if (isSelfService) {
-        const restaurant = await Restaurant.findById(user.restaurantId);
-        if (restaurant && restaurant.accountType === 'self-service') {
-          let checkoutUrl: string | null = null;
-
-          try {
-            const checkoutSession = await createCheckoutSession({
-              restaurantId: restaurant._id.toString(),
-              plan: restaurant.subscription?.plan || 'starter',
-              email: user.email,
-              acceptedTerms: user.acceptedTerms,
-              successUrl: `${process.env.FRONTEND_URL}/signup/success?session_id={CHECKOUT_SESSION_ID}`,
-              cancelUrl: `${process.env.FRONTEND_URL}/login`,
-            });
-            checkoutUrl = checkoutSession.url || null;
-          } catch (stripeError) {
-            logger.error('Failed to create checkout session during inactive login:', stripeError);
-          }
-
-          if (checkoutUrl) {
-            // Send payment reminder email async
-            sendPaymentCompletionEmail(
-              { name: restaurant.name, email: user.email },
-              checkoutUrl
-            ).catch((err) => logger.error('Failed to send payment reminder on login:', err));
-
-            res.status(200).json({
-              needsPayment: true,
-              checkoutUrl,
-              message: 'Veuillez compléter le paiement pour activer votre compte.',
-            });
-          } else {
-            res.status(403).json({
-              error: {
-                message: 'Votre compte n\'est pas encore activé. Une erreur est survenue lors de la création du lien de paiement. Veuillez réessayer.',
-                code: 'ACCOUNT_INACTIVE',
-                needsPayment: true,
-              },
-            });
-          }
-          return;
-        }
-      }
-
       res.status(403).json({
         error: {
           message: 'Ce compte a été désactivé. Veuillez contacter votre administrateur.',
           code: 'ACCOUNT_INACTIVE',
-          needsPayment: false,
         },
       });
       return;
@@ -193,6 +147,18 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     const isPasswordValid = await user.comparePassword(validatedData.password);
     if (!isPasswordValid) {
       res.status(401).json({ error: { message: 'Invalid credentials' } });
+      return;
+    }
+
+    // Check email verification for self-service users
+    if (!user.emailVerified) {
+      res.status(403).json({
+        error: {
+          message: 'Veuillez vérifier votre adresse email avant de vous connecter.',
+          code: 'EMAIL_NOT_VERIFIED',
+          email: user.email,
+        },
+      });
       return;
     }
 
@@ -433,9 +399,13 @@ export const resetPassword = async (req: Request, res: Response): Promise<void> 
       return;
     }
 
-    // Check if user is active
     if (user.status !== 'active') {
-      res.status(403).json({ error: { message: 'Account is inactive' } });
+      res.status(403).json({
+        error: {
+          message: 'Ce compte a été désactivé. Veuillez contacter votre administrateur.',
+          code: 'ACCOUNT_INACTIVE',
+        },
+      });
       return;
     }
 
@@ -524,7 +494,84 @@ export const changePassword = async (req: Request, res: Response): Promise<void>
   }
 };
 
-// Change user email (requires authentication and current password)
+export const verifyEmail = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { token } = req.params;
+
+    const user = await User.findOne({
+      $or: [
+        { emailVerificationToken: token, emailVerified: false },
+        { emailVerificationToken: token, emailVerified: true },
+      ],
+    });
+
+    if (!user) {
+      res.status(400).json({
+        error: { message: 'Lien de vérification invalide ou expiré.' },
+      });
+      return;
+    }
+
+    if (user.emailVerified) {
+      res.status(200).json({
+        message: 'Email déjà vérifié. Vous pouvez vous connecter.',
+      });
+      return;
+    }
+
+    user.emailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+
+    logger.info(`Email verified for user: ${user.email}`);
+
+    res.status(200).json({
+      message: 'Email vérifié avec succès. Vous pouvez maintenant vous connecter.',
+    });
+  } catch (error) {
+    logger.error('Email verification error:', error);
+    res.status(500).json({ error: { message: 'Failed to verify email' } });
+  }
+};
+
+export const resendVerification = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      res.status(400).json({ error: { message: 'Email requis' } });
+      return;
+    }
+
+    const user = await User.findOne({ email, emailVerified: false });
+    if (!user) {
+      res.status(200).json({
+        message: 'Si un compte non vérifié existe avec cet email, un nouveau lien a été envoyé.',
+      });
+      return;
+    }
+
+    user.emailVerificationToken = crypto.randomBytes(32).toString('hex');
+    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await user.save();
+
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${user.emailVerificationToken}`;
+
+    sendEmailVerificationEmail(
+      { email: user.email },
+      verificationUrl
+    ).catch((err) => logger.error('Failed to resend verification email:', err));
+
+    res.status(200).json({
+      message: 'Si un compte non vérifié existe avec cet email, un nouveau lien a été envoyé.',
+    });
+  } catch (error) {
+    logger.error('Resend verification error:', error);
+    res.status(500).json({ error: { message: 'Failed to resend verification email' } });
+  }
+};
+
 export const changeEmail = async (req: Request, res: Response): Promise<void> => {
   try {
     const validatedData = changeEmailSchema.parse(req.body);
@@ -644,7 +691,6 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
   try {
     const validatedData = signupSchema.parse(req.body);
 
-    // Check if user already exists with this email
     const existingUser = await User.findOne({ email: validatedData.ownerEmail });
     if (existingUser) {
       res.status(409).json({
@@ -653,7 +699,6 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Check if restaurant email already exists
     const existingRestaurant = await Restaurant.findOne({
       email: validatedData.restaurantEmail,
     });
@@ -664,16 +709,26 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    // Create restaurant (self-service type, inactive until payment)
+    const now = new Date();
+    const trialDays = 14;
+
     const restaurant = new Restaurant({
       name: validatedData.restaurantName,
       address: validatedData.restaurantAddress,
       phone: validatedData.restaurantPhone,
       email: validatedData.restaurantEmail,
       accountType: 'self-service',
-      status: 'inactive',
+      status: 'active',
       subscription: {
         plan: validatedData.plan,
+        status: 'trial',
+        trialEndsAt: new Date(now.getTime() + trialDays * 24 * 60 * 60 * 1000),
+      },
+      reservationQuota: {
+        monthlyCount: 0,
+        lastResetDate: now,
+        limit: validatedData.plan === 'pro' ? -1 : 400,
+        emailsSent: { at80: false, at90: false, at100: false },
       },
       publicSlug: generateShortCode(8),
       openingHours: {
@@ -688,66 +743,67 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
     });
 
     await restaurant.save();
-    logger.info(`Self-service restaurant created: ${restaurant.name} (${restaurant._id})`);
+    logger.info(`Restaurant created (active trial): ${restaurant.name} (${restaurant._id})`);
 
-    // Create owner user
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+
     const owner = new User({
       email: validatedData.ownerEmail,
       password: validatedData.ownerPassword,
       role: 'restaurant',
       restaurantId: restaurant._id,
-      status: 'inactive',
+      status: 'active',
+      emailVerified: false,
+      emailVerificationToken: verificationToken,
+      emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
       acceptedTerms: validatedData.acceptedTerms,
       acceptedTermsAt: new Date(),
       acceptedTermsVersion: '1.0',
     });
 
     await owner.save();
-    logger.info(`Owner user created: ${owner.email} for restaurant ${restaurant._id}`);
+    logger.info(`Owner created for restaurant ${restaurant._id}: ${owner.email}`);
 
-    // Create Stripe Checkout Session (non-blocking — account stays even if this fails)
-    let checkoutUrl: string | null = null;
     try {
-      const checkoutSession = await createCheckoutSession({
+      const stripeResult = await createTrialSubscription({
         restaurantId: restaurant._id.toString(),
         plan: validatedData.plan,
         email: validatedData.ownerEmail,
-        acceptedTerms: validatedData.acceptedTerms,
-        successUrl: `${process.env.FRONTEND_URL}/signup/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: `${process.env.FRONTEND_URL}/signup/cancel`,
+        trialDays,
       });
-      checkoutUrl = checkoutSession.url || null;
-
-      logger.info(`Stripe checkout session created for restaurant ${restaurant._id}`, {
-        sessionId: checkoutSession.id,
-        plan: validatedData.plan,
-      });
-
-      // Send payment completion email asynchronously
-      sendPaymentCompletionEmail(
-        { name: restaurant.name, email: validatedData.ownerEmail },
-        checkoutUrl!
-      ).catch((err) => logger.error('Failed to send payment completion email:', err));
+      if (stripeResult) {
+        restaurant.subscription!.stripeCustomerId = stripeResult.customerId;
+        restaurant.subscription!.stripeSubscriptionId = stripeResult.subscriptionId;
+        await restaurant.save();
+      }
     } catch (stripeError) {
-      logger.error('Stripe checkout creation failed during signup (account kept):', stripeError);
+      logger.error('Failed to create trial subscription:', stripeError);
     }
 
+    const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${verificationToken}`;
+
+    sendEmailVerificationEmail(
+      { email: validatedData.ownerEmail, name: validatedData.restaurantName },
+      verificationUrl
+    ).catch((err) => logger.error('Failed to send verification email:', err));
+
+    sendWelcomeEmail(
+      { email: validatedData.ownerEmail },
+      { name: restaurant.name, trialDays }
+    ).catch((err) => logger.error('Failed to send welcome email:', err));
+
     res.status(201).json({
-      message: 'Account created successfully. Please complete payment to activate.',
+      message: 'Compte créé avec succès. Vous avez 14 jours d\'essai gratuit.',
       restaurant: {
         id: restaurant._id,
         name: restaurant.name,
         email: restaurant.email,
-        accountType: restaurant.accountType,
       },
       owner: {
         id: owner._id,
         email: owner.email,
       },
-      checkout: checkoutUrl ? { url: checkoutUrl } : undefined,
-      note: !checkoutUrl
-        ? 'Payment link could not be generated. You can retry by logging in with your credentials.'
-        : undefined,
+      trialEndsAt: restaurant.subscription!.trialEndsAt,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
@@ -767,88 +823,4 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
   }
 };
 
-// Resume payment for inactive restaurant
-const resumePaymentSchema = z.object({
-  restaurantEmail: z.string().email('Invalid restaurant email format'),
-  ownerEmail: z.string().email('Invalid owner email format'),
-});
 
-export const resumePayment = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const validatedData = resumePaymentSchema.parse(req.body);
-
-    // Find restaurant by email
-    const restaurant = await Restaurant.findOne({
-      email: validatedData.restaurantEmail,
-      status: 'inactive',
-      accountType: 'self-service',
-    });
-
-    // Always return the same response to prevent email enumeration
-    if (!restaurant) {
-      logger.info(`Resume payment requested for non-matching restaurant: ${validatedData.restaurantEmail}`);
-      res.status(200).json({
-        message: 'If a matching account is found, a payment link has been sent to the associated email address.',
-      });
-      return;
-    }
-
-    // Find owner user
-    const owner = await User.findOne({
-      email: validatedData.ownerEmail,
-      restaurantId: restaurant._id,
-    });
-
-    if (!owner) {
-      logger.info(`Resume payment requested but no owner found for restaurant ${restaurant._id}`);
-      res.status(200).json({
-        message: 'If a matching account is found, a payment link has been sent to the associated email address.',
-      });
-      return;
-    }
-
-    // Create new checkout session
-    const checkoutSession = await createCheckoutSession({
-      restaurantId: restaurant._id.toString(),
-      plan: restaurant.subscription?.plan || 'starter',
-      email: validatedData.ownerEmail,
-      acceptedTerms: owner.acceptedTerms,
-      successUrl: `${process.env.FRONTEND_URL}/signup/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${process.env.FRONTEND_URL}/signup/cancel?resume=true&restaurantEmail=${encodeURIComponent(validatedData.restaurantEmail)}&ownerEmail=${encodeURIComponent(validatedData.ownerEmail)}`,
-    });
-
-    logger.info(`Resume payment checkout session created for restaurant ${restaurant._id}`, {
-      sessionId: checkoutSession.id,
-      plan: restaurant.subscription?.plan,
-    });
-
-    // Send payment reminder email with the new checkout link
-    sendPaymentCompletionEmail(
-      { name: restaurant.name, email: validatedData.ownerEmail },
-      checkoutSession.url!
-    ).catch((err) => logger.error('Failed to send payment completion email on resume:', err));
-
-    res.status(200).json({
-      message: 'If a matching account is found, a payment link has been sent to the associated email address.',
-      checkout: {
-        sessionId: checkoutSession.id,
-        url: checkoutSession.url,
-      },
-    });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      res.status(400).json({
-        error: {
-          message: 'Validation error',
-          details: error.errors,
-        },
-      });
-      return;
-    }
-
-    logger.error('Resume payment error:', error);
-    res.status(500).json({
-      error: { message: 'Failed to create payment session. Please try again.' },
-    });
-  }
-};

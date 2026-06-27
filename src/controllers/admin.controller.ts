@@ -1749,6 +1749,7 @@ export const manageSubscription = async (req: Request, res: Response): Promise<v
         const startDate = new Date();
         const endDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
 
+        restaurant.status = 'active';
         restaurant.subscription = {
           plan: activatePlan as 'starter' | 'pro',
           status: 'active',
@@ -1758,6 +1759,11 @@ export const manageSubscription = async (req: Request, res: Response): Promise<v
           stripeSubscriptionId: restaurant.subscription?.stripeSubscriptionId,
           cancelAtPeriodEnd: false,
         };
+
+        await User.updateMany(
+          { restaurantId: restaurant._id },
+          { status: 'active' }
+        );
 
         // Set quota based on plan
         const limit = activatePlan === 'pro' ? -1 : 400;
@@ -1854,8 +1860,14 @@ export const manageSubscription = async (req: Request, res: Response): Promise<v
 
         restaurant.subscription.status = 'cancelled';
         restaurant.subscription.cancelAtPeriodEnd = true;
+        restaurant.status = 'inactive';
 
-        message = `Subscription cancelled. Will remain active until ${restaurant.subscription.currentPeriodEnd?.toLocaleDateString('fr-FR') || 'end of period'}`;
+        await User.updateMany(
+          { restaurantId: restaurant._id },
+          { status: 'inactive' }
+        );
+
+        message = `Subscription cancelled. Restaurant and users have been deactivated.`;
         logger.info(`Admin cancelled subscription for restaurant ${restaurant.name} (${id})`, {
           syncStatus: hasStripeSubscription ? 'partial' : 'mongodb_only',
         });

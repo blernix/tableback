@@ -1,19 +1,35 @@
 import { Router } from 'express';
 import * as userController from '../controllers/user.controller';
 import { authenticateToken, authorizeRole } from '../middleware/auth.middleware';
+import { validate } from '../middleware/validate.middleware';
+import {
+  createServerUserSchema,
+  updateServerUserSchema,
+  serverUserIdParam,
+} from '../validations/user.schemas';
 import { verifyProPlan } from '../middleware/subscription.middleware';
 
 const router = Router();
 
-// All user routes require authentication and restaurant role
 router.use(authenticateToken);
 router.use(authorizeRole(['restaurant']));
-router.use(verifyProPlan); // Require Pro plan for server management
+router.use(verifyProPlan);
 
-// Server user management
 router.get('/servers', userController.getServerUsers);
-router.post('/servers', userController.createServerUser);
-router.put('/servers/:id', userController.updateServerUser);
-router.delete('/servers/:id', userController.deleteServerUser);
+router.post(
+  '/servers',
+  validate({ body: createServerUserSchema }),
+  userController.createServerUser
+);
+router.put(
+  '/servers/:id',
+  validate({ body: updateServerUserSchema, params: serverUserIdParam }),
+  userController.updateServerUser
+);
+router.delete(
+  '/servers/:id',
+  validate({ params: serverUserIdParam }),
+  userController.deleteServerUser
+);
 
 export default router;
