@@ -547,7 +547,13 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    const user = await User.findOne({ email, emailVerified: false });
+    const user = await User.findOne({
+      email,
+      $or: [
+        { emailVerified: false },
+        { emailVerified: { $exists: false } },
+      ],
+    });
     if (!user) {
       res.status(200).json({
         message: 'Si un compte non vérifié existe avec cet email, un nouveau lien a été envoyé.',
@@ -561,10 +567,16 @@ export const resendVerification = async (req: Request, res: Response): Promise<v
 
     const verificationUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/verify-email?token=${user.emailVerificationToken}`;
 
-    sendEmailVerificationEmail(
+    const emailResult = await sendEmailVerificationEmail(
       { email: user.email },
       verificationUrl
-    ).catch((err) => logger.error('Failed to resend verification email:', err));
+    );
+
+    if (!emailResult.success) {
+      logger.error('Failed to resend verification email:', emailResult.error);
+      res.status(500).json({ error: { message: "Erreur lors de l'envoi de l'email de vérification." } });
+      return;
+    }
 
     res.status(200).json({
       message: 'Si un compte non vérifié existe avec cet email, un nouveau lien a été envoyé.',
