@@ -5,6 +5,7 @@ import { join } from 'path';
 import brevoConfig from '../config/brevo';
 import logger from '../utils/logger';
 import { generatePasswordResetToken, generateReservationCancelToken } from './tokenService';
+import { t, formatDateLocale, normalizeLocale, type Locale } from './emailMessages';
 
 // Types
 interface EmailParams {
@@ -17,6 +18,7 @@ interface EmailOptions {
   subject: string;
   templateName: string;
   params: EmailParams;
+  locale?: Locale;
   replyTo?: {
     email: string;
     name: string;
@@ -40,6 +42,7 @@ interface Restaurant {
   name: string;
   email: string;
   phone: string;
+  language?: 'fr' | 'en';
 }
 
 interface Reservation {
@@ -53,12 +56,23 @@ interface Reservation {
   restaurantId: string;
   status?: 'pending' | 'confirmed' | 'cancelled' | 'completed';
   notes?: string;
+  locale?: 'fr' | 'en';
 }
 
 // Quota check stub (will be implemented in Story 1.7)
 const canSendEmail = async (): Promise<boolean> => {
   return true; // Always allow for now
 };
+
+// Resolve the locale for a customer-facing (reservation) email.
+function reservationLocale(reservation: Reservation, restaurant: Restaurant): Locale {
+  return normalizeLocale(reservation.locale, normalizeLocale(restaurant.language, 'fr'));
+}
+
+// Resolve the locale for a restaurant/owner-facing email.
+function restaurantLocale(restaurant: Restaurant): Locale {
+  return normalizeLocale(restaurant.language, 'fr');
+}
 
 // Initialize Brevo API
 let apiInstance: brevo.TransactionalEmailsApi | null = null;
@@ -78,10 +92,11 @@ function getBrevoApiInstance(): brevo.TransactionalEmailsApi {
  *
  * @param templateName - Template file name (without .html extension)
  * @param params - Variables to replace in template
+ * @param locale - Language folder to load the template from (default: 'fr')
  * @returns HTML content with replaced variables
  */
-function loadTemplate(templateName: string, params: EmailParams): string {
-  const templatePath = join(__dirname, '../templates/emails', `${templateName}.html`);
+function loadTemplate(templateName: string, params: EmailParams, locale: Locale = 'fr'): string {
+  const templatePath = join(__dirname, '../templates/emails', locale, `${templateName}.html`);
   let html = readFileSync(templatePath, 'utf-8');
 
   // Replace all {{variable}} with actual values
@@ -110,7 +125,7 @@ function loadTemplate(templateName: string, params: EmailParams): string {
  * @returns Promise with email result
  */
 async function sendEmail(options: EmailOptions): Promise<EmailResult> {
-  const { to, toName, subject, templateName, params, replyTo } = options;
+  const { to, toName, subject, templateName, params, locale = 'fr', replyTo } = options;
 
   try {
     // Feature flag check
@@ -126,7 +141,7 @@ async function sendEmail(options: EmailOptions): Promise<EmailResult> {
     }
 
     // Load and render HTML template
-    const htmlContent = loadTemplate(templateName, params);
+    const htmlContent = loadTemplate(templateName, params, locale);
 
     // Prepare email
     const sendSmtpEmail = new brevo.SendSmtpEmail();
@@ -197,15 +212,10 @@ async function sendEmail(options: EmailOptions): Promise<EmailResult> {
 
 /**
  * FORMAT DATE HELPER
- * Convert date to French locale format (e.g., "12 janvier 2026")
+ * Convert date to localized format (e.g., "12 janvier 2026" / "January 12, 2026")
  */
-function formatDate(dateInput: Date | string): string {
-  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  return date.toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+function formatDate(dateInput: Date | string, locale: Locale = 'fr'): string {
+  return formatDateLocale(dateInput, locale);
 }
 
 /**
@@ -284,7 +294,7 @@ function generatePlainTextFromHtml(html: string): string {
  *
  * @param user - User object with email, name, and _id
  */
-export async function sendPasswordResetEmail(user: User & { _id: string }): Promise<EmailResult> {
+export async function sendPasswordResetEmail(user: User & { _id: string }, locale: Locale = 'fr'): Promise<EmailResult> {
   // Generate random token stored in DB (single-use)
   const resetToken = await generatePasswordResetToken(user._id);
   const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
@@ -292,23 +302,26 @@ export async function sendPasswordResetEmail(user: User & { _id: string }): Prom
   return sendEmail({
     to: user.email,
     toName: user.name || user.email,
-    subject: 'Réinitialisation de votre mot de passe - TableMaster',
+    subject: t(locale, 'subject.passwordReset'),
     templateName: 'password-reset',
+    locale,
     params: {
-      userName: user.name || 'Utilisateur',
+      userName: user.name || t(locale, 'welcome.userName'),
       resetLink,
     },
     });
 }
 
 export async function sendPasswordChangedNotification(
-  email: string
+  email: string,
+  locale: Locale = 'fr'
 ): Promise<EmailResult> {
   return sendEmail({
     to: email,
     toName: email,
-    subject: 'Votre mot de passe a été modifié - TableMaster',
+    subject: t(locale, 'subject.passwordChanged'),
     templateName: 'password-changed',
+    locale,
     params: {
       userName: email,
       contactEmail: process.env.EMAIL_SENDER || 'contact@tablemaster.fr',
@@ -331,15 +344,18 @@ export async function sendPendingReservationEmail(
   reservation: Reservation,
   restaurant: Restaurant
 ): Promise<EmailResult> {
+  const locale = reservationLocale(reservation, restaurant);
+
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
-    subject: `Demande de réservation reçue - ${restaurant.name}`,
+    subject: t(locale, 'subject.pendingReservation', { restaurant: restaurant.name }),
     templateName: 'pending-reservation',
+    locale,
     params: {
       customerName: reservation.customerName,
       restaurantName: restaurant.name,
-      reservationDate: formatDate(reservation.date),
+      reservationDate: formatDate(reservation.date, locale),
       reservationTime: reservation.time,
       partySize: reservation.partySize,
     },
@@ -368,18 +384,20 @@ export async function sendConfirmationEmail(
     reservation.restaurantId
   );
   const cancellationLink = `${process.env.BACKEND_URL}/api/v1/public/reservations/cancel?token=${cancellationToken}`;
+  const locale = reservationLocale(reservation, restaurant);
 
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
-    subject: `Réservation confirmée - ${restaurant.name}`,
+    subject: t(locale, 'subject.confirmation', { restaurant: restaurant.name }),
     templateName: 'confirmation',
+    locale,
     params: {
       customerName: reservation.customerName,
       restaurantName: restaurant.name,
       restaurantPhone: restaurant.phone,
       restaurantEmail: restaurant.email,
-      reservationDate: formatDate(reservation.date),
+      reservationDate: formatDate(reservation.date, locale),
       reservationTime: reservation.time,
       partySize: reservation.partySize,
       cancellationLink,
@@ -413,18 +431,20 @@ export async function sendDirectConfirmationEmail(
     reservation.restaurantId
   );
   const cancellationLink = `${process.env.BACKEND_URL}/api/v1/public/reservations/cancel?token=${cancellationToken}`;
+  const locale = reservationLocale(reservation, restaurant);
 
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
-    subject: `Confirmation de réservation - ${restaurant.name}`,
+    subject: t(locale, 'subject.directConfirmation', { restaurant: restaurant.name }),
     templateName: 'direct-confirmation',
+    locale,
     params: {
       customerName: reservation.customerName,
       restaurantName: restaurant.name,
       restaurantPhone: restaurant.phone,
       restaurantEmail: restaurant.email,
-      reservationDate: formatDate(reservation.date),
+      reservationDate: formatDate(reservation.date, locale),
       reservationTime: reservation.time,
       partySize: reservation.partySize,
       cancellationLink,
@@ -451,15 +471,18 @@ export async function sendCancellationConfirmationEmail(
   reservation: Reservation,
   restaurant: Restaurant
 ): Promise<EmailResult> {
+  const locale = reservationLocale(reservation, restaurant);
+
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
-    subject: `Annulation confirmée - ${restaurant.name}`,
+    subject: t(locale, 'subject.cancellation', { restaurant: restaurant.name }),
     templateName: 'cancellation',
+    locale,
     params: {
       customerName: reservation.customerName,
       restaurantName: restaurant.name,
-      reservationDate: formatDate(reservation.date),
+      reservationDate: formatDate(reservation.date, locale),
       reservationTime: reservation.time,
     },
   });
@@ -483,20 +506,22 @@ export async function sendRestaurantNotificationEmail(
   restaurant: Restaurant,
   action: 'created' | 'updated' | 'cancelled'
 ): Promise<EmailResult> {
+  const locale = restaurantLocale(restaurant);
+
   const actionConfig = {
     created: {
-      title: 'Nouvelle réservation',
-      verb: 'créée',
+      title: t(locale, 'action.created.title'),
+      verb: t(locale, 'action.created.verb'),
       color: '#2563eb', // blue
     },
     updated: {
-      title: 'Réservation modifiée',
-      verb: 'modifiée',
+      title: t(locale, 'action.updated.title'),
+      verb: t(locale, 'action.updated.verb'),
       color: '#f59e0b', // amber
     },
     cancelled: {
-      title: 'Réservation annulée',
-      verb: 'annulée',
+      title: t(locale, 'action.cancelled.title'),
+      verb: t(locale, 'action.cancelled.verb'),
       color: '#dc2626', // red
     },
   };
@@ -507,14 +532,15 @@ export async function sendRestaurantNotificationEmail(
   let notesSection = '';
   if (reservation.notes && reservation.notes.trim() !== '') {
     const escapedNotes = escapeHtml(reservation.notes);
-    notesSection = `<p style="margin: 8px 0;"><strong style="color: #4b5563;">Notes :</strong> <span style="color: #1f2937;">${escapedNotes}</span></p>`;
+    notesSection = `<p style="margin: 8px 0;"><strong style="color: #4b5563;">${t(locale, 'notesLabel')}</strong> <span style="color: #1f2937;">${escapedNotes}</span></p>`;
   }
 
   return sendEmail({
     to: restaurant.email,
     toName: restaurant.name,
-    subject: `[TableMaster] ${config.title} - ${reservation.customerName}`,
+    subject: t(locale, 'subject.restaurantNotification', { title: config.title, customer: reservation.customerName }),
     templateName: 'restaurant-notification',
+    locale,
     params: {
       actionTitle: config.title,
       actionVerb: config.verb,
@@ -522,7 +548,7 @@ export async function sendRestaurantNotificationEmail(
       customerName: reservation.customerName,
       customerEmail: reservation.customerEmail,
       customerPhone: reservation.customerPhone || '',
-      reservationDate: formatDate(reservation.date),
+      reservationDate: formatDate(reservation.date, locale),
       reservationTime: reservation.time,
       partySize: reservation.partySize,
       status: reservation.status,
@@ -546,11 +572,13 @@ export async function sendReservationUpdateEmail(
   reservation: Reservation,
   restaurant: Restaurant
 ): Promise<EmailResult> {
+  const locale = reservationLocale(reservation, restaurant);
+
   const statusMap = {
-    pending: 'En attente',
-    confirmed: 'Confirmée',
-    cancelled: 'Annulée',
-    completed: 'Terminée',
+    pending: t(locale, 'status.pending'),
+    confirmed: t(locale, 'status.confirmed'),
+    cancelled: t(locale, 'status.cancelled'),
+    completed: t(locale, 'status.completed'),
   };
 
   const statusText =
@@ -559,12 +587,13 @@ export async function sendReservationUpdateEmail(
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
-    subject: `Mise à jour de réservation - ${restaurant.name}`,
+    subject: t(locale, 'subject.reservationUpdate', { restaurant: restaurant.name }),
     templateName: 'reservation-update',
+    locale,
     params: {
       customerName: reservation.customerName,
       restaurantName: restaurant.name,
-      reservationDate: formatDate(reservation.date),
+      reservationDate: formatDate(reservation.date, locale),
       reservationTime: reservation.time,
       partySize: reservation.partySize,
       status: statusText,
@@ -598,11 +627,13 @@ export async function sendReviewRequestEmail(
   logger.info(
     `Sending review request email to ${reservation.customerEmail} for restaurant ${restaurant.name} with Google review link: ${restaurant.googleReviewLink}`
   );
+  const locale = reservationLocale(reservation, restaurant);
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
-    subject: `Votre réservation chez ${restaurant.name}`,
+    subject: t(locale, 'subject.reviewRequest', { restaurant: restaurant.name }),
     templateName: 'review-request',
+    locale,
     params: {
       customerName: reservation.customerName,
       restaurantName: restaurant.name,
@@ -631,53 +662,43 @@ export async function sendReviewRequestEmail(
  * @param level - Warning level: 80, 90, or 100 (percentage)
  */
 export async function sendQuotaWarningEmail(
-  restaurant: { _id: string; name: string; email: string },
+  restaurant: { _id: string; name: string; email: string; language?: 'fr' | 'en' },
   quotaInfo: { current: number; limit: number; remaining: number; percentage: number },
   level: 80 | 90 | 100
 ): Promise<EmailResult> {
+  const locale = normalizeLocale(restaurant.language, 'fr');
+
   // Define email configuration based on warning level
   const levelConfig = {
     80: {
       headerColor: '#f59e0b', // amber
       headerIcon: '',
-      headerTitle: 'Quota bientôt atteint',
+      headerTitle: t(locale, 'quota.80.headerTitle'),
       alertBg: '#fffbeb',
       alertBorder: '#f59e0b',
       alertColor: '#92400e',
-      message: `Vous avez utilisé <strong>${quotaInfo.percentage}%</strong> de votre quota mensuel de réservations. Il vous reste encore <strong>${quotaInfo.remaining} réservations</strong> ce mois.`,
-      ctaSection: `<div style="background-color: #dbeafe; padding: 15px; border-radius: 4px; margin-top: 20px;">
-        <p style="margin: 0; color: #1e40af; font-size: 14px;">
-           <strong>Astuce :</strong> Passez au plan Pro pour des réservations illimitées et ne plus vous soucier des limites mensuelles.
-        </p>
-      </div>`,
+      message: t(locale, 'quota.80.message', { percentage: quotaInfo.percentage, remaining: quotaInfo.remaining }),
+      ctaSection: t(locale, 'quota.80.cta'),
     },
     90: {
       headerColor: '#f97316', // orange
       headerIcon: '',
-      headerTitle: 'Attention : Quota presque atteint',
+      headerTitle: t(locale, 'quota.90.headerTitle'),
       alertBg: '#fff7ed',
       alertBorder: '#f97316',
       alertColor: '#7c2d12',
-      message: `<strong>Attention !</strong> Vous avez utilisé <strong>${quotaInfo.percentage}%</strong> de votre quota mensuel. Il ne vous reste que <strong>${quotaInfo.remaining} réservations</strong> ce mois.`,
-      ctaSection: `<div style="background-color: #dbeafe; padding: 15px; border-radius: 4px; margin-top: 20px;">
-        <p style="margin: 0; color: #1e40af; font-size: 14px;">
-           <strong>Recommandé :</strong> Pour éviter les interruptions, passez dès maintenant au plan Pro pour bénéficier de réservations illimitées.
-        </p>
-      </div>`,
+      message: t(locale, 'quota.90.message', { percentage: quotaInfo.percentage, remaining: quotaInfo.remaining }),
+      ctaSection: t(locale, 'quota.90.cta'),
     },
     100: {
       headerColor: '#dc2626', // red
       headerIcon: '',
-      headerTitle: 'Quota mensuel atteint',
+      headerTitle: t(locale, 'quota.100.headerTitle'),
       alertBg: '#fef2f2',
       alertBorder: '#dc2626',
       alertColor: '#991b1b',
-      message: `<strong>Limite atteinte !</strong> Vous avez atteint votre quota mensuel de <strong>${quotaInfo.limit} réservations</strong>. Vous ne pouvez plus créer de nouvelles réservations ce mois.`,
-      ctaSection: `<div style="background-color: #fee2e2; padding: 15px; border-radius: 4px; margin-top: 20px; border: 2px solid #dc2626;">
-        <p style="margin: 0; color: #991b1b; font-size: 14px; font-weight: bold;">
-           Action requise : Passez au plan Pro immédiatement pour continuer à accepter des réservations.
-        </p>
-      </div>`,
+      message: t(locale, 'quota.100.message', { limit: quotaInfo.limit }),
+      ctaSection: t(locale, 'quota.100.cta'),
     },
   };
 
@@ -687,8 +708,9 @@ export async function sendQuotaWarningEmail(
   return sendEmail({
     to: restaurant.email,
     toName: restaurant.name,
-    subject: `[TableMaster] ${config.headerTitle} - ${quotaInfo.current}/${quotaInfo.limit} réservations`,
+    subject: t(locale, 'subject.quotaWarning', { title: config.headerTitle, current: quotaInfo.current, limit: quotaInfo.limit }),
     templateName: 'quota-warning',
+    locale,
     params: {
       restaurantName: restaurant.name,
       message: config.message,
@@ -721,20 +743,22 @@ export async function sendQuotaWarningEmail(
  */
 export async function sendWelcomeEmail(
   user: { name?: string; email: string },
-  restaurant: { name: string; trialDays?: number }
+  restaurant: { name: string; trialDays?: number; language?: 'fr' | 'en' }
 ): Promise<EmailResult> {
+  const locale = normalizeLocale(restaurant.language, 'fr');
   const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
   const trialText = restaurant.trialDays != null && restaurant.trialDays > 0
-    ? `${restaurant.trialDays} jours d'essai gratuit`
-    : 'Votre abonnement démarre immédiatement';
+    ? t(locale, 'welcome.trial', { days: restaurant.trialDays })
+    : t(locale, 'welcome.noTrial');
 
   return sendEmail({
     to: user.email,
     toName: user.name || user.email,
-    subject: 'Bienvenue sur TableMaster',
+    subject: t(locale, 'subject.welcome'),
     templateName: 'welcome',
+    locale,
     params: {
-      userName: user.name || 'Restaurateur',
+      userName: user.name || t(locale, 'welcome.userName'),
       restaurantName: restaurant.name,
       dashboardLink,
       trialText,
@@ -763,7 +787,8 @@ export async function sendSubscriptionConfirmedEmail(
     nextBillingDate: string;
     isProPlan: boolean;
     quotaLimit?: number;
-  }
+  },
+  locale: Locale = 'fr'
 ): Promise<EmailResult> {
   const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
   const billingLink = `${process.env.FRONTEND_URL}/dashboard/billing`;
@@ -775,10 +800,11 @@ export async function sendSubscriptionConfirmedEmail(
   return sendEmail({
     to: user.email,
     toName: user.name || user.email,
-    subject: `Abonnement ${subscriptionInfo.planName} confirmé - TableMaster`,
+    subject: t(locale, 'subject.subscriptionConfirmed', { plan: subscriptionInfo.planName }),
     templateName: 'subscription-confirmed',
+    locale,
     params: {
-      userName: user.name || 'Restaurateur',
+      userName: user.name || t(locale, 'welcome.userName'),
       planName: subscriptionInfo.planName,
       price: subscriptionInfo.price,
       billingPeriod: subscriptionInfo.billingPeriod,
@@ -797,20 +823,22 @@ export async function sendSubscriptionConfirmedEmail(
  * Send subscription extended email (when admin offers free days)
  */
 export async function sendSubscriptionExtendedEmail(
-  restaurant: { name: string; email: string },
+  restaurant: { name: string; email: string; language?: 'fr' | 'en' },
   extensionInfo: {
     daysOffered: number;
     previousEndDate: string;
     newEndDate: string;
   }
 ): Promise<EmailResult> {
+  const locale = normalizeLocale(restaurant.language, 'fr');
   const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
 
   return sendEmail({
     to: restaurant.email,
     toName: restaurant.name,
-    subject: `${extensionInfo.daysOffered} jour(s) offert(s) sur votre abonnement - TableMaster`,
+    subject: t(locale, 'subject.subscriptionExtended', { days: extensionInfo.daysOffered }),
     templateName: 'subscription-extended',
+    locale,
     params: {
       restaurantName: restaurant.name,
       daysOffered: extensionInfo.daysOffered,
@@ -825,7 +853,7 @@ export async function sendSubscriptionExtendedEmail(
  * Send plan downgrade email (when changing from Pro to Starter)
  */
 export async function sendPlanDowngradeEmail(
-  restaurant: { name: string; email: string },
+  restaurant: { name: string; email: string; language?: 'fr' | 'en' },
   planInfo: {
     fromPlan: string;
     toPlan: string;
@@ -833,14 +861,16 @@ export async function sendPlanDowngradeEmail(
     monthlyPrice: string;
   }
 ): Promise<EmailResult> {
+  const locale = normalizeLocale(restaurant.language, 'fr');
   const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
   const upgradeLink = `${process.env.FRONTEND_URL}/dashboard/settings/billing`;
 
   return sendEmail({
     to: restaurant.email,
     toName: restaurant.name,
-    subject: `Votre abonnement TableMaster a été modifié - Changement de plan`,
+    subject: t(locale, 'subject.planDowngrade'),
     templateName: 'plan-downgrade',
+    locale,
     params: {
       restaurantName: restaurant.name,
       fromPlan: planInfo.fromPlan,
@@ -857,22 +887,20 @@ export async function sendPlanDowngradeEmail(
  * Send trial reminder email (7 days before trial ends)
  */
 export async function sendTrialReminderEmail(
-  restaurant: { name: string; email: string },
+  restaurant: { name: string; email: string; language?: 'fr' | 'en' },
   trialEndDate: Date
 ): Promise<EmailResult> {
+  const locale = normalizeLocale(restaurant.language, 'fr');
   const dashboardLink = `${process.env.FRONTEND_URL}/dashboard`;
   const billingLink = `${process.env.FRONTEND_URL}/dashboard/settings/billing`;
-  const trialEndFormatted = trialEndDate.toLocaleDateString('fr-FR', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  const trialEndFormatted = formatDate(trialEndDate, locale);
 
   return sendEmail({
     to: restaurant.email,
     toName: restaurant.name,
-    subject: `Votre essai gratuit TableMaster se termine bientôt`,
+    subject: t(locale, 'subject.trialReminder'),
     templateName: 'trial-reminder',
+    locale,
     params: {
       restaurantName: restaurant.name,
       trialEndDate: trialEndFormatted,
@@ -900,15 +928,17 @@ export function resetApiInstance(): void {
  * Variables: restaurantName, resumeUrl, daysRemaining
  */
 export async function sendPaymentCompletionEmail(
-  restaurant: { name: string; email: string },
+  restaurant: { name: string; email: string; language?: 'fr' | 'en' },
   checkoutUrl: string,
   daysRemaining: number = 14
 ): Promise<EmailResult> {
+  const locale = normalizeLocale(restaurant.language, 'fr');
   return sendEmail({
     to: restaurant.email,
     toName: restaurant.name,
-    subject: `Finalisez votre inscription sur TableMaster`,
+    subject: t(locale, 'subject.paymentCompletion'),
     templateName: 'payment-reminder',
+    locale,
     params: {
       restaurantName: restaurant.name,
       resumeUrl: checkoutUrl,
@@ -930,17 +960,19 @@ export async function sendReminderEmail(
   reservation: Reservation,
   restaurant: Restaurant
 ): Promise<EmailResult> {
+  const locale = reservationLocale(reservation, restaurant);
   return sendEmail({
     to: reservation.customerEmail,
     toName: reservation.customerName,
-    subject: `Rappel : Réservation demain - ${restaurant.name}`,
+    subject: t(locale, 'subject.reminder', { restaurant: restaurant.name }),
     templateName: 'reminder',
+    locale,
     params: {
       customerName: reservation.customerName,
       restaurantName: restaurant.name,
       restaurantPhone: restaurant.phone,
       restaurantEmail: restaurant.email,
-      reservationDate: formatDate(reservation.date),
+      reservationDate: formatDate(reservation.date, locale),
       reservationTime: reservation.time,
       partySize: reservation.partySize,
     },
@@ -957,7 +989,7 @@ export async function sendCommercialInvitationEmail(
     restaurantName: string;
     plan: 'starter' | 'pro';
     checkoutUrl: string;
-    password: string;
+    setupLink: string;
     trialDays?: number;
     discountPercent?: number;
   }
@@ -982,7 +1014,7 @@ export async function sendCommercialInvitationEmail(
       restaurantName: params.restaurantName,
       checkoutUrl: params.checkoutUrl,
       email: to.email,
-      password: params.password,
+      setupLink: params.setupLink,
       planLabel,
       trialText,
       discountInfo,
@@ -995,13 +1027,15 @@ export async function sendCommercialInvitationEmail(
  */
 export async function sendEmailVerificationEmail(
   to: { email: string; name?: string },
-  verificationUrl: string
+  verificationUrl: string,
+  locale: Locale = 'fr'
 ): Promise<EmailResult> {
   return sendEmail({
     to: to.email,
     toName: to.name || to.email,
-    subject: 'Vérifiez votre adresse email - TableMaster',
+    subject: t(locale, 'subject.emailVerification'),
     templateName: 'email-verification',
+    locale,
     params: {
       userName: to.name || to.email,
       verificationUrl,

@@ -30,6 +30,9 @@ router.delete(
 
 router.get('/preferences', notificationController.getNotificationPreferences);
 
+router.post('/expo-token', notificationController.registerExpoToken);
+router.delete('/expo-token', notificationController.unregisterExpoToken);
+
 router.put(
   '/preferences',
   validate({ body: updateNotificationPreferencesSchema }),

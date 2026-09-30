@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verify your email - TableMaster</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      font-family:
+        -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-weight: 300;
+      background-color: #fafafa;
+      color: #2a2a2a;
+    "
+  >
+    <table
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      style="background-color: #fafafa; min-height: 100vh"
+    >
+      <tr>
+        <td align="center" style="padding: 60px 20px">
+          <table
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            style="max-width: 600px; background-color: #ffffff; border: 1px solid #e5e5e5"
+          >
+            <tr>
+              <td style="padding: 40px 30px 30px; border-bottom: 1px solid #e5e5e5">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="center">
+                      <div style="font-size: 24px; font-weight: 400; color: #0066ff; letter-spacing: -0.5px; margin-bottom: 8px">TableMaster</div>
+                      <div style="font-size: 32px; margin: 20px 0; color: #0066ff">•</div>
+                      <div style="font-size: 20px; font-weight: 400; color: #2a2a2a; margin-top: 16px">Verify your email address</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding: 30px 30px 0">
+                <p style="margin: 0 0 20px 0; font-size: 16px; line-height: 1.6; color: #2a2a2a">
+                  Hello <strong style="font-weight: 400">{{userName}}</strong>,
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding: 20px 30px">
+                <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #666666">
+                  Thank you for creating your TableMaster account. To activate your account and start using the service, please verify your email address by clicking the button below.
+                </p>
+
+                <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #666666">
+                  This link is valid for <strong style="font-weight: 400">24 hours</strong>.
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding: 0 30px 30px">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="center" style="padding: 10px 0">
+                      <a
+                        href="{{verificationUrl}}"
+                        style="
+                          display: inline-block;
+                          background-color: #0066ff;
+                          color: #ffffff;
+                          padding: 16px 40px;
+                          text-decoration: none;
+                          font-size: 15px;
+                          font-weight: 400;
+                          border: none;
+                        "
+                      >
+                        Verify my email
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding: 0 30px 20px">
+                <p style="margin: 0; font-size: 13px; color: #999999; line-height: 1.5">
+                  If the button does not work, copy and paste this link into your browser:
+                </p>
+                <p style="margin: 8px 0 0; font-size: 13px; color: #0066ff; line-height: 1.5; word-break: break-all">
+                  {{verificationUrl}}
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding: 20px 30px">
+                <table
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  style="background-color: #fafafa; border-left: 2px solid #0066ff"
+                >
+                  <tr>
+                    <td style="padding: 20px">
+                      <div style="font-size: 13px; color: #666666; line-height: 1.5">
+                        If you did not create a TableMaster account, you can ignore this email.
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding: 30px; border-top: 1px solid #e5e5e5; background-color: #fafafa">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="center">
+                      <div style="font-size: 14px; color: #666666; margin-bottom: 8px">
+                        <a href="https://tablemaster.fr" style="color: #0066ff; text-decoration: none; font-weight: 400">TableMaster</a>
+                      </div>
+                      <div style="font-size: 12px; color: #999999; line-height: 1.5">The professional reservation management solution</div>
+                      <div style="font-size: 11px; color: #999999; margin-top: 16px">© 2026 TableMaster. All rights reserved.</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

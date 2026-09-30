@@ -698,6 +698,9 @@ const signupSchema = z.object({
     errorMap: () => ({ message: 'Plan must be either starter or pro' }),
   }),
 
+  // Preferred language for owner-facing emails
+  language: z.enum(['fr', 'en']).optional().default('fr'),
+
   // Honeypot field (must be empty — bots fill this in)
   website: z.string().max(0, 'Invalid submission').optional(),
 });
@@ -734,6 +737,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       email: validatedData.restaurantEmail,
       accountType: 'self-service',
       status: 'active',
+      language: validatedData.language,
       subscription: {
         plan: validatedData.plan,
         status: 'trial',

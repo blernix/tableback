@@ -158,11 +158,7 @@ export const createReservation = async (req: Request, res: Response): Promise<vo
 
     // Increment reservation count for quota tracking (Starter plan)
     try {
-      const restaurant = await Restaurant.findById(req.user.restaurantId);
-      if (restaurant) {
-        await restaurant.incrementReservationCount();
-        logger.debug(`Reservation count incremented for restaurant: ${restaurant.name}`);
-      }
+      await Restaurant.incrementReservationCount(req.user.restaurantId);
     } catch (quotaError) {
       logger.error('Error incrementing reservation count:', quotaError);
       // Don't fail the request if quota increment fails

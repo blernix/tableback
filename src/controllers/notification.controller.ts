@@ -9,6 +9,7 @@ import {
 } from '../services/pushNotificationService';
 import { initializeSSE } from '../services/sseService';
 import NotificationPreferencesModel from '../models/NotificationPreferences.model';
+import User from '../models/User.model';
 
 // Validation schemas
 const subscribeSchema = z.object({
@@ -243,7 +244,52 @@ export const updateNotificationPreferences = async (req: Request, res: Response)
     }
 
     logger.error('Error updating notification preferences:', error);
-    res.status(500).json({ error: { message: 'Failed to update notification preferences' } });
+    res.status(500).json({ error: { message: 'Failed to update preferences' } });
+  }
+};
+
+const expoTokenSchema = z.object({
+  token: z.string().min(1),
+  platform: z.string().optional(),
+});
+
+export const registerExpoToken = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user?.userId) {
+      res.status(401).json({ error: { message: 'Unauthorized' } });
+      return;
+    }
+    const validated = expoTokenSchema.parse(req.body);
+    await User.findByIdAndUpdate(req.user.userId, {
+      expoPushToken: validated.token,
+      expoPushTokenPlatform: validated.platform || 'unknown',
+    });
+    logger.info(`Expo push token registered for user ${req.user.userId}`);
+    res.status(200).json({ success: true });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      res.status(400).json({ error: { message: 'Invalid token', details: error.errors } });
+      return;
+    }
+    logger.error('Error registering expo token:', error);
+    res.status(500).json({ error: { message: 'Failed to register expo token' } });
+  }
+};
+
+export const unregisterExpoToken = async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!req.user?.userId) {
+      res.status(401).json({ error: { message: 'Unauthorized' } });
+      return;
+    }
+    await User.findByIdAndUpdate(req.user.userId, {
+      $unset: { expoPushToken: '', expoPushTokenPlatform: '' },
+    });
+    logger.info(`Expo push token removed for user ${req.user.userId}`);
+    res.status(200).json({ success: true });
+  } catch (error) {
+    logger.error('Error removing expo token:', error);
+    res.status(500).json({ error: { message: 'Failed to remove expo token' } });
   }
 };
 

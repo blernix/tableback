@@ -8,6 +8,7 @@ export interface IReservation extends Document {
   date: Date;
   time: string;
   numberOfGuests: number;
+  locale: 'fr' | 'en';
   status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
   notes?: string;
   reminderSent: boolean;
@@ -53,6 +54,11 @@ const reservationSchema = new Schema<IReservation>(
       type: Number,
       required: [true, 'Number of guests is required'],
       min: [1, 'At least 1 guest is required'],
+    },
+    locale: {
+      type: String,
+      enum: ['fr', 'en'],
+      default: undefined,
     },
     status: {
       type: String,

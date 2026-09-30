@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nouveau message de contact - TableMaster</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-weight: 300; background-color: #FAFAFA; color: #2A2A2A;">
+  <!-- Swiss Clean Email Template - TableMaster -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #FAFAFA; min-height: 100vh;">
+    <tr>
+      <td align="center" style="padding: 60px 20px;">
+        <!-- Main Content Container -->
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #FFFFFF; border: 1px solid #E5E5E5;">
+          
+          <!-- Header -->
+          <tr>
+            <td style="padding: 40px 30px 30px; border-bottom: 1px solid #E5E5E5;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 24px; font-weight: 400; color: #0066FF; letter-spacing: -0.5px; margin-bottom: 8px;">
+                      TableMaster
+                    </div>
+                    <div style="font-size: 32px; margin: 20px 0; color: #0066FF;">
+                      📨
+                    </div>
+                    <div style="font-size: 20px; font-weight: 400; color: #2A2A2A; margin-top: 16px;">
+                      Nouveau message de contact
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Greeting -->
+          <tr>
+            <td style="padding: 30px 30px 0;">
+              <p style="margin: 0 0 20px 0; font-size: 16px; line-height: 1.6; color: #2A2A2A;">
+                Bonjour Équipe TableMaster,
+              </p>
+              <p style="margin: 0 0 20px 0; font-size: 16px; line-height: 1.6; color: #2A2A2A;">
+                Vous avez reçu un nouveau message de contact via l'application.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 20px 30px;">
+              <!-- Message Details -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; background-color: #FAFAFA; border: 1px solid #E5E5E5;">
+                <tr>
+                  <td style="padding: 24px;">
+                    <div style="font-size: 18px; font-weight: 400; color: #2A2A2A; margin-bottom: 20px; border-bottom: 1px solid #E5E5E5; padding-bottom: 10px;">
+                      Détails du message
+                    </div>
+                    
+                    <!-- Restaurant Info -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+                      <tr>
+                        <td style="padding: 8px 0; font-size: 14px; color: #666666;">
+                          <strong style="font-weight: 400; color: #2A2A2A; min-width: 120px; display: inline-block;">Restaurant :</strong>
+                          {{restaurantName}}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; font-size: 14px; color: #666666;">
+                          <strong style="font-weight: 400; color: #2A2A2A; min-width: 120px; display: inline-block;">Email restaurant :</strong>
+                          {{restaurantEmail}}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; font-size: 14px; color: #666666;">
+                          <strong style="font-weight: 400; color: #2A2A2A; min-width: 120px; display: inline-block;">Utilisateur :</strong>
+                          {{userName}} ({{userEmail}})
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Message Info -->
+                    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px;">
+                      <tr>
+                        <td style="padding: 8px 0; font-size: 14px; color: #666666;">
+                          <strong style="font-weight: 400; color: #2A2A2A; min-width: 120px; display: inline-block;">Date :</strong>
+                          {{date}}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; font-size: 14px; color: #666666;">
+                          <strong style="font-weight: 400; color: #2A2A2A; min-width: 120px; display: inline-block;">Catégorie :</strong>
+                          {{categoryLabel}}
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; font-size: 14px; color: #666666;">
+                          <strong style="font-weight: 400; color: #2A2A2A; min-width: 120px; display: inline-block;">Sujet :</strong>
+                          {{subject}}
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Message Content -->
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding: 16px 0 8px 0; font-size: 14px; color: #666666;">
+                          <strong style="font-weight: 400; color: #2A2A2A; display: block; margin-bottom: 8px;">Message :</strong>
+                          <div style="background-color: #FFFFFF; border: 1px solid #E5E5E5; padding: 16px; font-size: 14px; line-height: 1.6; color: #2A2A2A; white-space: pre-wrap;">
+                            {{message}}
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Action Note -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; background-color: #FAFAFA; border-left: 2px solid #0066FF;">
+                <tr>
+                  <td style="padding: 20px;">
+                    <div style="font-size: 14px; color: #2A2A2A; line-height: 1.5;">
+                      <strong style="font-weight: 400;">À faire :</strong> Répondre à l'utilisateur dans les plus brefs délais en utilisant l'adresse email ci-dessus.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 30px; border-top: 1px solid #E5E5E5; background-color: #FAFAFA;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="padding-bottom: 20px;">
+                    <div style="font-size: 14px; color: #666666;">
+                      Cet email a été envoyé automatiquement depuis l'application TableMaster.
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 12px; color: #999999; line-height: 1.4;">
+                      © {{year}} TableMaster. Tous droits réservés.
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

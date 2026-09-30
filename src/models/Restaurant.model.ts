@@ -37,9 +37,9 @@ export interface IRestaurant extends Document {
   apiKey: string;
   status: 'active' | 'inactive';
   timezone: string;
+  language: 'fr' | 'en';
   logoUrl?: string;
   googleReviewLink?: string;
-  // Account type and subscription
   accountType: 'managed' | 'self-service';
   subscription?: {
     plan: 'starter' | 'pro';
@@ -51,31 +51,25 @@ export interface IRestaurant extends Document {
     cancelAtPeriodEnd?: boolean;
     trialEndsAt?: Date;
   };
-  // Payment reminder tracking
   paymentReminderSentAt?: Date;
-  // Reservation quota (for Starter plan)
   reservationQuota?: {
     monthlyCount: number;
     lastResetDate: Date;
-    limit: number; // 400 for Starter, unlimited (-1) for Pro and Managed
+    limit: number;
     emailsSent?: {
       at80: boolean;
       at90: boolean;
       at100: boolean;
     };
   };
-  // Widget customization (Pro plan only)
   widgetConfig?: {
-    // Form colors (affecte le formulaire de réservation)
     primaryColor?: string;
     secondaryColor?: string;
     fontFamily?: string;
     borderRadius?: string;
-    // Floating button specific colors (bouton flottant uniquement)
     buttonBackgroundColor?: string;
     buttonTextColor?: string;
     buttonHoverColor?: string;
-    // Floating button general configs
     buttonText?: string;
     buttonPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
     buttonStyle?: 'round' | 'square' | 'minimal';
@@ -83,8 +77,7 @@ export interface IRestaurant extends Document {
     modalWidth?: string;
     modalHeight?: string;
   };
-  // Vanity URL system
-  publicSlug?: string; // Short code or custom slug for pretty URLs
+  publicSlug?: string;
   createdBy?: mongoose.Types.ObjectId;
   menu: {
     displayMode: 'pdf' | 'detailed' | 'both';
@@ -109,8 +102,6 @@ export interface IRestaurant extends Document {
   isSubscriptionActive(): boolean;
   canCustomizeWidget(): boolean;
   canCreateReservation(): boolean;
-  incrementReservationCount(): Promise<void>;
-  resetMonthlyReservationCount(): Promise<void>;
   getReservationQuotaInfo(): {
     current: number;
     limit: number;
@@ -180,6 +171,11 @@ const restaurantSchema = new Schema<IRestaurant>(
     timezone: {
       type: String,
       default: 'Europe/Paris',
+    },
+    language: {
+      type: String,
+      enum: ['fr', 'en'],
+      default: 'fr',
     },
     logoUrl: {
       type: String,
@@ -502,87 +498,90 @@ restaurantSchema.methods.canCreateReservation = function (): boolean {
   return this.reservationQuota.monthlyCount < limit;
 };
 
-// Method to increment reservation count
-restaurantSchema.methods.incrementReservationCount = async function (): Promise<void> {
-  // Only track for Starter plan
-  if (this.accountType !== 'self-service' || this.subscription?.plan !== 'starter') {
-    return;
-  }
-
-  if (!this.reservationQuota) {
-    this.reservationQuota = {
-      monthlyCount: 0,
-      lastResetDate: new Date(),
-      limit: 400,
-      emailsSent: { at80: false, at90: false, at100: false },
-    };
-  }
-
-  // Check if we need to reset (new month)
+// Static method: atomically increment reservation count for a restaurant
+restaurantSchema.statics.incrementReservationCount = async function (
+  restaurantId: mongoose.Types.ObjectId | string
+): Promise<void> {
   const now = new Date();
-  const lastReset = new Date(this.reservationQuota.lastResetDate);
-  if (now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear()) {
-    this.reservationQuota.monthlyCount = 0;
-    this.reservationQuota.lastResetDate = now;
-    // Reset email sent flags
-    this.reservationQuota.emailsSent = { at80: false, at90: false, at100: false };
+
+  const restaurant = await this.findById(restaurantId).select(
+    'accountType subscription.plan reservationQuota email name'
+  );
+
+  if (!restaurant) return;
+  if (restaurant.accountType !== 'self-service' || restaurant.subscription?.plan !== 'starter') return;
+
+  // Step 1: atomically reset if month changed
+  const lastReset = restaurant.reservationQuota?.lastResetDate || new Date(0);
+  const needsReset =
+    lastReset.getUTCMonth() !== now.getUTCMonth() ||
+    lastReset.getUTCFullYear() !== now.getUTCFullYear();
+
+  if (needsReset) {
+    await this.updateOne(
+      { _id: restaurantId },
+      {
+        $set: {
+          'reservationQuota.monthlyCount': 0,
+          'reservationQuota.lastResetDate': now,
+          'reservationQuota.emailsSent': { at80: false, at90: false, at100: false },
+        },
+      }
+    );
   }
 
-  // Increment count
-  this.reservationQuota.monthlyCount += 1;
+  // Step 2: atomically increment
+  const updated = await this.findByIdAndUpdate(
+    restaurantId,
+    { $inc: { 'reservationQuota.monthlyCount': 1 } },
+    { new: true, select: 'reservationQuota email name' }
+  );
 
-  // Calculate current quota info
-  const quotaInfo = this.getReservationQuotaInfo();
+  if (!updated || !updated.reservationQuota) return;
 
-  // Check thresholds and send notification emails (async, don't block)
-  setImmediate(async () => {
-    try {
-      const { sendQuotaWarningEmail } = await import('../services/emailService');
+  // Step 3: check thresholds and send emails asynchronously
+  const current = updated.reservationQuota.monthlyCount || 0;
+  const limit = updated.reservationQuota.limit;
+  if (limit <= 0) return;
 
-      if (!this.reservationQuota?.emailsSent) {
-        return;
-      }
+  const percentage = Math.min(100, Math.round((current / limit) * 100));
+  const emailsSent = updated.reservationQuota.emailsSent || { at80: false, at90: false, at100: false };
 
-      // Send 80% warning
-      if (quotaInfo.percentage >= 80 && !this.reservationQuota.emailsSent.at80) {
+  const thresholds: { level: 80 | 90 | 100; flag: 'at80' | 'at90' | 'at100' }[] = [
+    { level: 80, flag: 'at80' },
+    { level: 90, flag: 'at90' },
+    { level: 100, flag: 'at100' },
+  ];
+
+  for (const { level, flag } of thresholds) {
+    if (percentage >= level && !emailsSent[flag]) {
+      try {
+        const { sendQuotaWarningEmail } = await import('../services/emailService');
+
+        const quotaInfo = {
+          current,
+          limit,
+          remaining: Math.max(0, limit - current),
+          percentage,
+          isUnlimited: false,
+        };
+
         await sendQuotaWarningEmail(
-          { _id: this._id.toString(), name: this.name, email: this.email },
+          { _id: restaurantId.toString(), name: updated.name, email: updated.email },
           quotaInfo,
-          80
+          level
         );
-        this.reservationQuota.emailsSent.at80 = true;
-        await this.save();
-      }
 
-      // Send 90% warning
-      if (quotaInfo.percentage >= 90 && !this.reservationQuota.emailsSent.at90) {
-        await sendQuotaWarningEmail(
-          { _id: this._id.toString(), name: this.name, email: this.email },
-          quotaInfo,
-          90
+        await this.updateOne(
+          { _id: restaurantId },
+          { $set: { [`reservationQuota.emailsSent.${flag}`]: true } }
         );
-        this.reservationQuota.emailsSent.at90 = true;
-        await this.save();
+      } catch (error) {
+        const { default: logger } = await import('../utils/logger');
+        logger.error('Error sending quota warning email:', error);
       }
-
-      // Send 100% warning
-      if (quotaInfo.percentage >= 100 && !this.reservationQuota.emailsSent.at100) {
-        await sendQuotaWarningEmail(
-          { _id: this._id.toString(), name: this.name, email: this.email },
-          quotaInfo,
-          100
-        );
-        this.reservationQuota.emailsSent.at100 = true;
-        await this.save();
-      }
-    } catch (error) {
-      // Use dynamic import for logger to avoid circular dependency
-      const { default: logger } = await import('../utils/logger');
-      logger.error('Error sending quota warning email:', error);
     }
-  });
-
-  await this.save();
+  }
 };
 
 // Method to reset monthly reservation count
@@ -636,6 +635,10 @@ restaurantSchema.methods.getReservationQuotaInfo = function () {
   };
 };
 
+export interface IRestaurantModel extends mongoose.Model<IRestaurant> {
+  incrementReservationCount(restaurantId: mongoose.Types.ObjectId | string): Promise<void>;
+}
+
 // Indexes
 restaurantSchema.index({ status: 1 });
 restaurantSchema.index({ accountType: 1 });
@@ -643,6 +646,6 @@ restaurantSchema.index({ 'subscription.status': 1 });
 restaurantSchema.index({ 'subscription.stripeCustomerId': 1 });
 restaurantSchema.index({ accountType: 1, 'subscription.plan': 1, 'subscription.status': 1 });
 
-const Restaurant = mongoose.model<IRestaurant>('Restaurant', restaurantSchema);
+const Restaurant = mongoose.model<IRestaurant, IRestaurantModel>('Restaurant', restaurantSchema);
 
 export default Restaurant;

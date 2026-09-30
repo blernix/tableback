@@ -156,6 +156,23 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
     eventId: event.id,
   });
 
+  const idempotentEventTypes = new Set([
+    'checkout.session.completed',
+    'customer.subscription.created',
+    'customer.subscription.updated',
+    'customer.subscription.deleted',
+    'invoice.payment_succeeded',
+    'invoice.payment_failed',
+  ]);
+
+  if (idempotentEventTypes.has(event.type)) {
+    const existing = await SubscriptionHistory.findOne({ stripeEventId: event.id }).lean();
+    if (existing) {
+      logger.info(`Webhook ${event.type} already processed (${event.id}) — skipping`);
+      return;
+    }
+  }
+
   try {
     switch (event.type) {
       case 'checkout.session.completed':
@@ -163,11 +180,11 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
         break;
 
       case 'customer.subscription.created':
-        await handleSubscriptionCreated(event.data.object as Stripe.Subscription);
+        await handleSubscriptionCreated(event.data.object as Stripe.Subscription, event.id);
         break;
 
       case 'customer.subscription.updated':
-        await handleSubscriptionUpdated(event.data.object as Stripe.Subscription);
+        await handleSubscriptionUpdated(event.data.object as Stripe.Subscription, event.id);
         break;
 
       case 'customer.subscription.trial_will_end':
@@ -175,15 +192,15 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
         break;
 
       case 'customer.subscription.deleted':
-        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription);
+        await handleSubscriptionDeleted(event.data.object as Stripe.Subscription, event.id);
         break;
 
       case 'invoice.payment_succeeded':
-        await handlePaymentSucceeded(event.data.object as Stripe.Invoice);
+        await handlePaymentSucceeded(event.data.object as Stripe.Invoice, event.id);
         break;
 
       case 'invoice.payment_failed':
-        await handlePaymentFailed(event.data.object as Stripe.Invoice);
+        await handlePaymentFailed(event.data.object as Stripe.Invoice, event.id);
         break;
 
       case 'setup_intent.setup_failed':
@@ -215,127 +232,93 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session): Promis
     return;
   }
 
-  const restaurant = await Restaurant.findById(restaurantId);
+  const customerId = session.customer as string;
+  const subscriptionId = session.subscription as string;
 
-  if (!restaurant) {
+  if (!customerId) {
+    logger.error('Missing customer in checkout session', { sessionId: session.id });
+    return;
+  }
+
+  const updated = await Restaurant.findByIdAndUpdate(
+    restaurantId,
+    {
+      $set: {
+        status: 'active',
+        'subscription.plan': plan,
+        'subscription.status': 'active',
+        'subscription.stripeCustomerId': customerId,
+        'subscription.stripeSubscriptionId': subscriptionId,
+      },
+    },
+    { new: true, select: 'name email subscription accountType status' }
+  );
+
+  if (!updated) {
     logger.error(`Restaurant not found: ${restaurantId}`);
     return;
   }
 
-  // Update restaurant with Stripe customer ID
-  if (session.customer) {
-    const wasAlreadyActive = restaurant.status === 'active';
-    const isSameSubscription = restaurant.subscription?.stripeSubscriptionId === session.subscription;
+  await SubscriptionHistory.create({
+    restaurantId: new Types.ObjectId(restaurantId),
+    eventType: 'subscription_created',
+    plan: plan as 'starter' | 'pro',
+    stripeEventId: session.id,
+    metadata: { checkoutSessionId: session.id, trialDays },
+  }).catch((err) => {
+    if (err.code !== 11000) logger.error('Failed to create subscription history:', err);
+  });
 
-    // Activate restaurant status
-    restaurant.status = 'active';
+  logger.info(`Restaurant ${restaurantId} subscription activated`);
 
-    restaurant.subscription = {
-      plan: plan as 'starter' | 'pro',
-      status: 'active',
-      stripeCustomerId: session.customer as string,
-      stripeSubscriptionId: session.subscription as string,
-    };
+  try {
+    await User.findOneAndUpdate(
+      { restaurantId: updated._id, status: 'inactive' },
+      { $set: { status: 'active' } }
+    );
+  } catch (err) {
+    logger.error('Error activating user:', err);
+  }
 
-    // Initialize reservation quota based on plan (only if not already set)
-    if (!restaurant.reservationQuota || restaurant.reservationQuota.limit === undefined) {
-      if (plan === 'starter') {
-        restaurant.reservationQuota = {
-          monthlyCount: 0,
-          lastResetDate: new Date(),
-          limit: 400,
-          emailsSent: {
-            at80: false,
-            at90: false,
-            at100: false,
-          },
-        };
-      } else if (plan === 'pro') {
-        restaurant.reservationQuota = {
-          monthlyCount: 0,
-          lastResetDate: new Date(),
-          limit: -1,
-          emailsSent: {
-            at80: false,
-            at90: false,
-            at100: false,
-          },
-        };
-      }
+  try {
+    const user = await User.findOne({ restaurantId: updated._id }).select('email').lean();
+    if (user) {
+      await sendWelcomeEmail(
+        { name: updated.name, email: user.email },
+        { name: updated.name, trialDays }
+      );
+
+      const planName = plan === 'starter' ? 'Starter' : 'Pro';
+      const price = plan === 'starter' ? '39€ / mois' : '69€ / mois';
+      const nextBilling = new Date();
+      nextBilling.setDate(nextBilling.getDate() + 30);
+      const nextBillingDate = nextBilling.toLocaleDateString('fr-FR', {
+        day: 'numeric', month: 'long', year: 'numeric',
+      });
+
+      await sendSubscriptionConfirmedEmail(
+        { name: updated.name, email: user.email },
+        {
+          planName,
+          price,
+          billingPeriod: 'Mensuel',
+          nextBillingDate,
+          isProPlan: plan === 'pro',
+          quotaLimit: plan === 'starter' ? 400 : undefined,
+        }
+      );
+
+      logger.info(`Welcome and subscription emails sent to ${user.email}`);
     }
-
-    await restaurant.save();
-
-    if (wasAlreadyActive && isSameSubscription) {
-      logger.info(`Restaurant ${restaurantId} already active with same subscription — skipping emails (idempotent webhook)`);
-      return;
-    }
-
-    logger.info(`Restaurant ${restaurantId} subscription activated`);
-
-    // Activate the user account
-    try {
-      const user = await User.findOne({ restaurantId: restaurant._id });
-      if (user && user.status === 'inactive') {
-        user.status = 'active';
-        await user.save();
-        logger.info(`User ${user.email} activated for restaurant ${restaurantId}`);
-      }
-    } catch (err) {
-      logger.error('Error activating user:', err);
-    }
-
-    // Send welcome and subscription confirmation emails
-    try {
-      // Find the user associated with this restaurant
-      const user = await User.findOne({ restaurantId: restaurant._id });
-
-      if (user) {
-        // Send welcome email (user doesn't have a name field, use restaurant name)
-        await sendWelcomeEmail(
-          { name: restaurant.name, email: user.email },
-          { name: restaurant.name, trialDays }
-        );
-
-        // Send subscription confirmation email
-        const planName = plan === 'starter' ? 'Starter' : 'Pro';
-        const price = plan === 'starter' ? '39€ / mois' : '69€ / mois';
-        const quotaLimit = plan === 'starter' ? 400 : undefined;
-
-        // Calculate next billing date (30 days from now)
-        const nextBilling = new Date();
-        nextBilling.setDate(nextBilling.getDate() + 30);
-        const nextBillingDate = nextBilling.toLocaleDateString('fr-FR', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-        });
-
-        await sendSubscriptionConfirmedEmail(
-          { name: restaurant.name, email: user.email },
-          {
-            planName,
-            price,
-            billingPeriod: 'Mensuel',
-            nextBillingDate,
-            isProPlan: plan === 'pro',
-            quotaLimit,
-          }
-        );
-
-        logger.info(`Welcome and subscription emails sent to ${user.email}`);
-      }
-    } catch (emailError) {
-      logger.error('Failed to send welcome/subscription emails:', emailError);
-      // Don't fail the checkout process if emails fail
-    }
+  } catch (emailError) {
+    logger.error('Failed to send welcome/subscription emails:', emailError);
   }
 }
 
 /**
  * Handle subscription created
  */
-async function handleSubscriptionCreated(subscription: Stripe.Subscription): Promise<void> {
+async function handleSubscriptionCreated(subscription: Stripe.Subscription, eventId: string): Promise<void> {
   const { restaurantId, plan } = subscription.metadata;
 
   if (!restaurantId) {
@@ -404,7 +387,7 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription): Pro
     restaurantId: new Types.ObjectId(restaurantId),
     eventType: 'subscription_created',
     plan: plan as 'starter' | 'pro',
-    stripeEventId: subscription.id,
+    stripeEventId: eventId,
     metadata: {
       subscriptionStatus: subscription.status,
       currentPeriodEnd: (subscription as any).current_period_end,
@@ -430,7 +413,7 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription): Pro
 /**
  * Handle subscription updated
  */
-async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Promise<void> {
+async function handleSubscriptionUpdated(subscription: Stripe.Subscription, eventId: string): Promise<void> {
   const { restaurantId } = subscription.metadata;
 
   if (!restaurantId) {
@@ -534,7 +517,7 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription): Pro
     eventType,
     plan: newPlan,
     previousPlan: previousPlan as 'starter' | 'pro' | undefined,
-    stripeEventId: subscription.id,
+    stripeEventId: eventId,
     metadata: {
       subscriptionStatus: subscription.status,
       cancelAtPeriodEnd: (subscription as any).cancel_at_period_end,
@@ -592,7 +575,7 @@ async function handleTrialWillEnd(subscription: Stripe.Subscription): Promise<vo
 /**
  * Handle subscription deleted
  */
-async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Promise<void> {
+async function handleSubscriptionDeleted(subscription: Stripe.Subscription, eventId: string): Promise<void> {
   const { restaurantId } = subscription.metadata;
 
   if (!restaurantId) {
@@ -600,26 +583,29 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Pro
     return;
   }
 
-  const restaurant = await Restaurant.findById(restaurantId);
+  const updated = await Restaurant.findByIdAndUpdate(
+    restaurantId,
+    {
+      $set: {
+        status: 'inactive',
+        'subscription.status': 'cancelled',
+      },
+    },
+    { select: 'subscription.plan' }
+  );
 
-  if (!restaurant) {
+  if (!updated) {
     logger.error(`Restaurant not found: ${restaurantId}`);
     return;
   }
 
-  // Update subscription status to cancelled and deactivate restaurant
-  if (restaurant.subscription) {
-    restaurant.subscription.status = 'cancelled';
-    restaurant.status = 'inactive';
-    await restaurant.save();
-  }
-
-  // Log to history
   await SubscriptionHistory.create({
     restaurantId: new Types.ObjectId(restaurantId),
     eventType: 'subscription_cancelled',
-    plan: restaurant.subscription?.plan || 'starter',
-    stripeEventId: subscription.id,
+    plan: updated.subscription?.plan || 'starter',
+    stripeEventId: eventId,
+  }).catch((err) => {
+    if (err.code !== 11000) logger.error('Failed to create subscription history:', err);
   });
 
   logger.info(`Subscription cancelled for restaurant ${restaurantId}`, {
@@ -630,25 +616,18 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription): Pro
 /**
  * Handle successful payment
  */
-async function handlePaymentSucceeded(invoice: Stripe.Invoice): Promise<void> {
-  if (!(invoice as any).subscription) {
-    return; // Not a subscription invoice
-  }
+async function handlePaymentSucceeded(invoice: Stripe.Invoice, eventId: string): Promise<void> {
+  if (!(invoice as any).subscription) return;
 
   const subscription = await stripe.subscriptions.retrieve((invoice as any).subscription as string);
-
   const { restaurantId } = subscription.metadata;
+  if (!restaurantId) return;
 
-  if (!restaurantId) {
-    return;
-  }
-
-  // Log to history
   await SubscriptionHistory.create({
     restaurantId: new Types.ObjectId(restaurantId),
     eventType: 'payment_succeeded',
     plan: determinePlanFromSubscription(subscription),
-    stripeEventId: invoice.id,
+    stripeEventId: eventId,
     stripeInvoiceId: invoice.id,
     amount: invoice.amount_paid / 100, // Convert cents to euros
     currency: invoice.currency,
@@ -667,36 +646,31 @@ async function handlePaymentSucceeded(invoice: Stripe.Invoice): Promise<void> {
 /**
  * Handle failed payment
  */
-async function handlePaymentFailed(invoice: Stripe.Invoice): Promise<void> {
-  if (!(invoice as any).subscription) {
-    return;
-  }
+async function handlePaymentFailed(invoice: Stripe.Invoice, eventId: string): Promise<void> {
+  if (!(invoice as any).subscription) return;
 
   const subscription = await stripe.subscriptions.retrieve((invoice as any).subscription as string);
-
   const { restaurantId } = subscription.metadata;
+  if (!restaurantId) return;
 
-  if (!restaurantId) {
-    return;
-  }
+  const updated = await Restaurant.findByIdAndUpdate(
+    restaurantId,
+    {
+      $set: {
+        status: 'inactive',
+        'subscription.status': 'past_due',
+      },
+    },
+    { select: 'subscription.plan' }
+  );
 
-  const restaurant = await Restaurant.findById(restaurantId);
+  if (!updated) return;
 
-  if (!restaurant || !restaurant.subscription) {
-    return;
-  }
-
-  // Update subscription status to past_due and deactivate restaurant
-  restaurant.subscription.status = 'past_due';
-  restaurant.status = 'inactive';
-  await restaurant.save();
-
-  // Log to history
   await SubscriptionHistory.create({
     restaurantId: new Types.ObjectId(restaurantId),
     eventType: 'payment_failed',
-    plan: restaurant.subscription.plan,
-    stripeEventId: invoice.id,
+    plan: updated.subscription?.plan || 'starter',
+    stripeEventId: eventId,
     stripeInvoiceId: invoice.id,
     amount: invoice.amount_due / 100,
     currency: invoice.currency,
@@ -704,6 +678,8 @@ async function handlePaymentFailed(invoice: Stripe.Invoice): Promise<void> {
       attemptCount: invoice.attempt_count,
       nextPaymentAttempt: invoice.next_payment_attempt,
     },
+  }).catch((err) => {
+    if (err.code !== 11000) logger.error('Failed to create subscription history:', err);
   });
 
   logger.warn(`Payment failed for restaurant ${restaurantId}`, {

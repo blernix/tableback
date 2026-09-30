@@ -8,6 +8,7 @@ import Reservation from '../models/Reservation.model';
 import logger from '../utils/logger';
 import { createCheckoutSession } from '../services/stripe.service';
 import { sendCommercialInvitationEmail } from '../services/emailService';
+import { generatePasswordResetToken } from '../services/tokenService';
 import { uploadToGCS, deleteFromGCS } from '../config/storage.config';
 import { stripe } from '../config/stripe.config';
 import CommercialNote from '../models/CommercialNote.model';
@@ -62,10 +63,10 @@ export const createRestaurant = async (req: Request, res: Response): Promise<voi
 
     const savedRestaurant = await restaurant.save();
 
-    const plainPassword = crypto.randomBytes(8).toString('hex') + 'Aa1!';
+    const tempPassword = crypto.randomBytes(32).toString('hex');
     const user = new User({
       email: validatedData.email,
-      password: plainPassword,
+      password: tempPassword,
       role: 'restaurant',
       restaurantId: savedRestaurant._id,
       status: 'inactive',
@@ -98,6 +99,9 @@ export const createRestaurant = async (req: Request, res: Response): Promise<voi
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
+    const setupToken = await generatePasswordResetToken(user._id.toString());
+    const setupLink = `${frontendUrl}/reset-password?token=${setupToken}`;
+
     const commercialUser = await User.findById(req.user!.userId).select('referralCode');
 
     const checkoutSession = await createCheckoutSession({
@@ -120,7 +124,7 @@ export const createRestaurant = async (req: Request, res: Response): Promise<voi
         restaurantName: validatedData.name,
         plan: validatedData.plan,
         checkoutUrl: checkoutSession.url!,
-        password: plainPassword,
+        setupLink,
         trialDays,
         discountPercent,
       }

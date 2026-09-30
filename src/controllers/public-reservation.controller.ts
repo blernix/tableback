@@ -91,6 +91,7 @@ const createPublicReservationSchema = z
     _honeypot: z.string().max(0, 'Invalid request').optional().default(''),
     consentMarketing: z.boolean().optional().default(false),
     consentDataProcessing: z.boolean().optional().default(false),
+    locale: z.enum(['fr', 'en']).optional().default('fr'),
   })
   .strict();
 
@@ -211,13 +212,14 @@ export const createPublicReservation = async (req: Request, res: Response): Prom
       notes: validatedData.notes || '',
       consentMarketing: validatedData.consentMarketing,
       consentDataProcessing: validatedData.consentDataProcessing,
+      locale: validatedData.locale,
     });
 
     await reservation.save();
 
     // Increment reservation count for quota tracking (Starter plan)
     try {
-      await restaurant.incrementReservationCount();
+      await Restaurant.incrementReservationCount(restaurant._id);
       logger.debug(`Reservation count incremented for restaurant: ${restaurant.name}`);
     } catch (quotaError) {
       logger.error('Error incrementing reservation count:', quotaError);
@@ -501,8 +503,8 @@ export const getAvailableTimeSlots = async (req: Request, res: Response): Promis
       const startTotal = startHour * 60 + startMinute;
       const endTotal = endHour * 60 + endMinute;
 
-      // 15-minute intervals — slot is valid only if a full service fits before closing
-      for (let current = startTotal; current + serviceDuration <= endTotal; current += 15) {
+      // 5-minute intervals — slot is valid only if a full service fits before closing
+      for (let current = startTotal; current + serviceDuration <= endTotal; current += 5) {
         const h = Math.floor(current / 60);
         const m = current % 60;
         slots.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reservation reminder</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-weight: 300; background-color: #FAFAFA; color: #2A2A2A;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #FAFAFA; min-height: 100vh;">
+    <tr>
+      <td align="center" style="padding: 60px 20px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; background-color: #FFFFFF; border: 1px solid #E5E5E5;">
+          
+          <!-- Header -->
+          <tr>
+            <td style="padding: 40px 30px 30px; border-bottom: 1px solid #E5E5E5;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center">
+                    <div style="font-size: 24px; font-weight: 400; color: #0066FF; letter-spacing: -0.5px; margin-bottom: 8px;">
+                      TableMaster
+                    </div>
+                    <div style="font-size: 14px; font-weight: 300; color: #D97706; margin: 12px 0;">
+                      REMINDER
+                    </div>
+                    <div style="font-size: 20px; font-weight: 400; color: #2A2A2A; margin-top: 16px;">
+                      Your reservation is tomorrow
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Greeting -->
+          <tr>
+            <td style="padding: 30px 30px 0;">
+              <p style="margin: 0 0 20px 0; font-size: 16px; line-height: 1.6; color: #2A2A2A;">
+                Hello <strong style="font-weight: 400;">{{customerName}}</strong>,
+              </p>
+            </td>
+          </tr>
+
+          <!-- Main Content -->
+          <tr>
+            <td style="padding: 20px 30px;">
+              <p style="margin: 0 0 24px 0; font-size: 16px; line-height: 1.6; color: #666666;">
+                This is a reminder that you have a reservation tomorrow at <strong style="font-weight: 400;">{{restaurantName}}</strong>.
+              </p>
+
+              <!-- Reservation Details -->
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 32px; border: 1px solid #E5E5E5;">
+                <tr>
+                  <td style="padding: 24px;">
+                    <div style="font-size: 16px; font-weight: 400; color: #2A2A2A; margin-bottom: 20px;">
+                      Summary
+                    </div>
+                    <table width="100%" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="padding: 8px 0; font-size: 14px; color: #666666;">Date</td>
+                        <td style="padding: 8px 0; font-size: 14px; color: #2A2A2A; text-align: right;">{{reservationDate}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; border-top: 1px solid #F5F5F5; font-size: 14px; color: #666666;">Time</td>
+                        <td style="padding: 8px 0; border-top: 1px solid #F5F5F5; font-size: 14px; color: #2A2A2A; text-align: right;">{{reservationTime}}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0; border-top: 1px solid #F5F5F5; font-size: 14px; color: #666666;">Number of guests</td>
+                        <td style="padding: 8px 0; border-top: 1px solid #F5F5F5; font-size: 14px; color: #2A2A2A; text-align: right;">{{partySize}}</td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Contact -->
+              <div style="margin-bottom: 32px; padding: 20px; background-color: #F5F7FA;">
+                <div style="font-size: 14px; font-weight: 400; color: #2A2A2A; margin-bottom: 12px;">
+                  Need to modify or cancel?
+                </div>
+                <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #666666;">
+                  Contact the restaurant directly:
+                </p>
+                <p style="margin: 8px 0 0; font-size: 14px; color: #0066FF;">
+                  {{restaurantPhone}}
+                </p>
+                <p style="margin: 4px 0 0; font-size: 14px; color: #0066FF;">
+                  {{restaurantEmail}}
+                </p>
+              </div>
+
+              <p style="margin: 0 0 12px 0; font-size: 14px; line-height: 1.6; color: #666666;">
+                See you tomorrow at <strong style="font-weight: 400;">{{restaurantName}}</strong>!
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 30px 30px; border-top: 1px solid #E5E5E5;">
+              <p style="margin: 0; font-size: 12px; color: #999999; text-align: center;">
+                This email was sent automatically by TableMaster.<br>
+                For any question, contact the restaurant directly.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

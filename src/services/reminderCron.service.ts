@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Reservation from '../models/Reservation.model';
 import Restaurant from '../models/Restaurant.model';
 import User from '../models/User.model';
@@ -64,6 +65,11 @@ async function sendReservationReminders(): Promise<void> {
 
       if (!restaurant) continue;
 
+      await Reservation.updateOne(
+        { _id: reservation._id },
+        { $set: { reminderSent: true, reminderSentAt: new Date() } }
+      );
+
       await sendReminderEmail(
         {
           _id: reservation._id.toString(),
@@ -83,11 +89,6 @@ async function sendReservationReminders(): Promise<void> {
           email: restaurant.email,
           phone: restaurant.phone,
         }
-      );
-
-      await Reservation.updateOne(
-        { _id: reservation._id },
-        { $set: { reminderSent: true, reminderSentAt: new Date() } }
       );
 
       logger.info(`✅ Reminder sent to ${reservation.customerEmail} for ${restaurant.name}`);
@@ -112,13 +113,22 @@ async function cleanupInactiveAccounts(): Promise<void> {
   logger.info(`🗑️  Cleaning up ${expiredRestaurants.length} inactive restaurants (${INACTIVE_CLEANUP_DAYS}+ days)`);
 
   for (const restaurant of expiredRestaurants) {
+    const session = await mongoose.startSession();
     try {
-      await User.deleteMany({ restaurantId: restaurant._id });
-      await Reservation.deleteMany({ restaurantId: restaurant._id });
-      await Restaurant.deleteOne({ _id: restaurant._id });
+      await session.withTransaction(async () => {
+        await User.deleteMany({ restaurantId: restaurant._id }, { session });
+        await Reservation.deleteMany({ restaurantId: restaurant._id }, { session });
+        await Restaurant.deleteOne({ _id: restaurant._id }, { session });
+      });
       logger.info(`🗑️  Deleted inactive restaurant: ${restaurant.name} (${restaurant._id})`);
-    } catch (err) {
-      logger.error(`❌ Failed to cleanup restaurant ${restaurant._id}:`, err);
+    } catch (err: any) {
+      if (err.errorLabels?.includes?.('TransientTransactionError')) {
+        logger.warn(`Transaction retry failed for ${restaurant._id}, will retry next cron cycle`);
+      } else {
+        logger.error(`❌ Failed to cleanup restaurant ${restaurant._id}:`, err);
+      }
+    } finally {
+      await session.endSession();
     }
   }
 }

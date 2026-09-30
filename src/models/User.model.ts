@@ -32,6 +32,8 @@ export interface IUser extends Document {
   emailVerified: boolean;
   emailVerificationToken?: string;
   emailVerificationExpires?: Date;
+  expoPushToken?: string;
+  expoPushTokenPlatform?: string;
   createdAt: Date;
   updatedAt: Date;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -119,6 +121,8 @@ const userSchema = new Schema<IUser>(
     emailVerified: { type: Boolean, default: false },
     emailVerificationToken: { type: String, default: null },
     emailVerificationExpires: { type: Date, default: null },
+    expoPushToken: { type: String, default: null },
+    expoPushTokenPlatform: { type: String, default: null },
   },
   {
     timestamps: true,
